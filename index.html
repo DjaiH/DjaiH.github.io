@@ -386,6 +386,8 @@ scrollbar-color: var(--border) transparent;
   background: #fff; transition: transform 0.18s;
 }
 .toggle.on::after { transform: translateX(20px); }
+.setting-btn { flex: 0 0 auto; width: auto; padding: 8px 16px; font-size: 14px; }
+.setting-btn.disabled { opacity: 0.4; }
 
 /* ─── UTILITY ─────────────────────────────────────────────────── */
 .hidden { display: none !important; }
@@ -847,7 +849,13 @@ const SaveSystem = (() => {
     });
   }
 
-  return { write, read, registerMigrations, exportAll, importAll, deleteAll };
+  // Delete a single game's save. Safe to call while not in that game —
+  // the next time it's opened, loadGame() falls back to a fresh state.
+  function deleteGame(gameId) {
+    localStorage.removeItem('save_' + gameId);
+  }
+
+  return { write, read, registerMigrations, exportAll, importAll, deleteAll, deleteGame };
 })();
 
 /* ════════════════════════════════════════════════════════════════
@@ -919,6 +927,11 @@ const SettingsScreen = (() => {
     { key: 'golden',       name: 'Golden cookies',       desc: 'Spawn golden cookies in Cookie Clicker for bonus rewards.' },
     { key: 'offlineModal', name: 'Welcome-back summary', desc: 'Show a popup with earnings when you return after being away.' },
   ];
+  // Games that can be reset individually
+  const GAMES = [
+    { id: 'clicker', icon: '🍪', name: 'Cookie Clicker' },
+    { id: 'dungeon', icon: '⚔️', name: 'Idle Dungeon' },
+  ];
   function render() {
     const list = document.getElementById('settings-list');
     if (!list) return;
@@ -934,6 +947,19 @@ const SettingsScreen = (() => {
         <div class="toggle ${on ? 'on' : ''}" role="switch" aria-checked="${on}" onclick="SettingsScreen.toggle('${t.key}', this)"></div>
       </div>`;
     });
+    // Per-game reset
+    html += `<div class="settings-group-title">Reset Progress</div>`;
+    GAMES.forEach(g => {
+      const saved = !!localStorage.getItem('save_' + g.id);
+      html += `<div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-name">${g.icon} ${g.name}</div>
+          <div class="setting-desc">${saved ? 'Wipe this game\'s progress for a fresh start.' : 'No saved progress yet.'}</div>
+        </div>
+        <button class="btn btn-danger setting-btn ${saved ? '' : 'disabled'}" ${saved ? `onclick="SettingsScreen.resetGame('${g.id}')"` : 'disabled'}>Reset</button>
+      </div>`;
+    });
+    html += `<div class="setting-desc" style="padding:2px 4px">Resetting one game leaves your other games and unlocked achievements untouched. To wipe everything, use Save / Load → Delete All Saves.</div>`;
     html += `<div class="settings-group-title">About</div>
       <div class="setting-row"><div class="setting-info">
         <div class="setting-name">Mini Game Hub</div>
@@ -948,7 +974,24 @@ const SettingsScreen = (() => {
     el.setAttribute('aria-checked', next);
     if (next) Haptics.vibrate(30);
   }
-  return { render, toggle };
+  function resetGame(id) {
+    const g = GAMES.find(x => x.id === id);
+    if (!g) return;
+    Modal.show({
+      title: `${g.icon} Reset ${g.name}?`,
+      body: `This permanently deletes all your <strong>${g.name}</strong> progress. Your other games and achievements are not affected.<br><br>This cannot be undone.`,
+      actions: [
+        { label: 'Cancel', cls: '' },
+        { label: 'Reset', cls: 'btn-danger', fn: () => {
+          SaveSystem.deleteGame(id);
+          Haptics.vibrate([60, 40, 80]);
+          Toast.show(g.icon, `${g.name} reset`, 'Progress wiped — fresh start next time you open it.');
+          render(); // refresh the disabled/enabled state
+        }}
+      ]
+    });
+  }
+  return { render, toggle, resetGame };
 })();
 
 /* ════════════════════════════════════════════════════════════════
