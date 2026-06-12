@@ -1260,7 +1260,8 @@ const SettingsScreen = (() => {
     save.data.totalBaked += earned;
     save.data.allTimeBaked = (save.data.allTimeBaked || 0) + earned;
     if (!Settings.get('offlineModal')) {
-      Toast.show('👋', 'Welcome back', `+${Fmt.format(earned)} cookies while away`);
+      const sugarTxt = sugarGained ? ` · +${sugarGained} 🍬` : '';
+      Toast.show('👋', 'Welcome back', `+${Fmt.format(earned)} cookies${sugarTxt} while away`);
       return;
     }
     Modal.show({
@@ -1349,7 +1350,7 @@ const SettingsScreen = (() => {
   // Small "⏳ time until affordable" tag, given a cost and current CpS
   function ttaTag(cost, cps) {
     if (S.cookies >= cost) return '';
-    if (cps <= 0) return '';
+    if (!(cps > 0)) return ''; // also catches NaN
     return ` <span style="color:var(--text2)">· ⏳ ${Fmt.time((cost - S.cookies) / cps)}</span>`;
   }
 
