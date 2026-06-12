@@ -23,7 +23,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>Mini Game Hub</title>
-<!-- v2: gated progression layers + PWA/offline support -->
+<!-- v3: settings + clicker upgrade timers/help + dungeon depth rework -->
 <style>
 /* ─── CSS CUSTOM PROPERTIES ───────────────────────────────────── */
 :root {
@@ -360,6 +360,33 @@ scrollbar-color: var(--border) transparent;
 .ach-desc  { font-size: 12px; color: var(--text2); margin-top: 2px; }
 .ach-hint  { font-size: 11px; color: var(--accent); margin-top: 2px; }
 
+/* ─── SETTINGS SCREEN ────────────────────────────────────────── */
+#screen-settings { padding: 16px; gap: 10px; }
+.settings-group-title {
+  font-size: 12px; font-weight: 600; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.08em; padding: 12px 2px 2px;
+}
+.setting-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px;
+}
+.setting-info { flex: 1; }
+.setting-name { font-size: 14px; font-weight: 600; }
+.setting-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.toggle {
+  position: relative; width: 46px; height: 26px; flex-shrink: 0;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 13px; transition: background 0.18s, border-color 0.18s;
+}
+.toggle.on { background: var(--accent); border-color: var(--accent); }
+.toggle::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; transition: transform 0.18s;
+}
+.toggle.on::after { transform: translateX(20px); }
+
 /* ─── UTILITY ─────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .text-gold  { color: var(--gold); }
@@ -421,6 +448,9 @@ scrollbar-color: var(--border) transparent;
       <button class="menu-btn" onclick="Router.go('save')">
         <span class="btn-icon">💾</span>Save / Load
       </button>
+      <button class="menu-btn" onclick="Router.go('settings')">
+        <span class="btn-icon">⚙️</span>Settings
+      </button>
     </div>
   </div>
 
@@ -454,6 +484,11 @@ scrollbar-color: var(--border) transparent;
   <!-- ACHIEVEMENTS SCREEN -->
   <div id="screen-achievements" class="screen">
     <div id="achievements-list"></div>
+  </div>
+
+  <!-- SETTINGS SCREEN -->
+  <div id="screen-settings" class="screen">
+    <div id="settings-list"></div>
   </div>
 
   <!-- GAME SCREENS (injected by each game module) -->
@@ -525,6 +560,27 @@ const EventBus = (() => {
   return { on, off, emit };
 })();
 
+/* ── Settings (device-local preferences) ──────────────────────── */
+const Settings = (() => {
+  const DEFAULTS = { haptics: true, golden: true, offlineModal: true };
+  let s = { ...DEFAULTS };
+  try {
+    const raw = localStorage.getItem('settings');
+    if (raw) s = { ...DEFAULTS, ...JSON.parse(raw) };
+  } catch {}
+  function save() { localStorage.setItem('settings', JSON.stringify(s)); }
+  function get(k) { return s[k]; }
+  function set(k, v) { s[k] = v; save(); EventBus.emit('settings', { key: k, value: v }); }
+  return { get, set };
+})();
+
+/* ── Haptics (gated by the haptics setting) ───────────────────── */
+const Haptics = {
+  vibrate(pattern) {
+    if (Settings.get('haptics') && navigator.vibrate) navigator.vibrate(pattern);
+  }
+};
+
 /* ── Toast Notifications ──────────────────────────────────────── */
 const Toast = (() => {
   const container = document.getElementById('toast-container');
@@ -537,7 +593,7 @@ const Toast = (() => {
         ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
       </div>`;
     container.appendChild(el);
-    if (navigator.vibrate) navigator.vibrate(isAchievement ? [50, 30, 80] : 40);
+    Haptics.vibrate(isAchievement ? [50, 30, 80] : 40);
     setTimeout(() => el.remove(), 3200);
   }
   return { show };
@@ -673,6 +729,7 @@ const Router = (() => {
   register('menu',         { title: '' });
   register('save',         { title: '💾 Save & Load' });
   register('achievements', { title: '🏆 Achievements', onEnter: () => AchievementSystem.renderScreen() });
+  register('settings',     { title: '⚙️ Settings', onEnter: () => SettingsScreen.render() });
 
   // Start on menu
   window.addEventListener('DOMContentLoaded', () => go('menu'));
@@ -849,6 +906,49 @@ const AchievementSystem = (() => {
 
   load();
   return { register, unlock, isUnlocked, count, renderScreen };
+})();
+
+/* ════════════════════════════════════════════════════════════════
+   SETTINGS SCREEN
+   ════════════════════════════════════════════════════════════════ */
+const SettingsScreen = (() => {
+  const TOGGLES = [
+    { group: 'Feedback' },
+    { key: 'haptics',      name: 'Haptic feedback',      desc: 'Vibrate on taps, purchases and rewards (mobile only).' },
+    { group: 'Gameplay' },
+    { key: 'golden',       name: 'Golden cookies',       desc: 'Spawn golden cookies in Cookie Clicker for bonus rewards.' },
+    { key: 'offlineModal', name: 'Welcome-back summary', desc: 'Show a popup with earnings when you return after being away.' },
+  ];
+  function render() {
+    const list = document.getElementById('settings-list');
+    if (!list) return;
+    let html = '';
+    TOGGLES.forEach(t => {
+      if (t.group) { html += `<div class="settings-group-title">${t.group}</div>`; return; }
+      const on = Settings.get(t.key);
+      html += `<div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-name">${t.name}</div>
+          <div class="setting-desc">${t.desc}</div>
+        </div>
+        <div class="toggle ${on ? 'on' : ''}" role="switch" aria-checked="${on}" onclick="SettingsScreen.toggle('${t.key}', this)"></div>
+      </div>`;
+    });
+    html += `<div class="settings-group-title">About</div>
+      <div class="setting-row"><div class="setting-info">
+        <div class="setting-name">Mini Game Hub</div>
+        <div class="setting-desc">Offline idle games. Progress saves automatically; use Save / Load to back it up.</div>
+      </div></div>`;
+    list.innerHTML = html;
+  }
+  function toggle(key, el) {
+    const next = !Settings.get(key);
+    Settings.set(key, next);
+    el.classList.toggle('on', next);
+    el.setAttribute('aria-checked', next);
+    if (next) Haptics.vibrate(30);
+  }
+  return { render, toggle };
 })();
 
 /* ════════════════════════════════════════════════════════════════
@@ -1159,6 +1259,11 @@ const AchievementSystem = (() => {
     save.data.cookies    += earned;
     save.data.totalBaked += earned;
     save.data.allTimeBaked = (save.data.allTimeBaked || 0) + earned;
+    if (!Settings.get('offlineModal')) {
+      const sugarTxt = sugarGained ? ` · +${sugarGained} 🍬` : '';
+      Toast.show('👋', 'Welcome back', `+${Fmt.format(earned)} cookies${sugarTxt} while away`);
+      return;
+    }
     Modal.show({
       title: '👋 Welcome back!',
       body: `You were away for <strong>${Fmt.time(elapsed)}</strong>.<br>
@@ -1242,10 +1347,21 @@ const AchievementSystem = (() => {
     }
   }
 
+  // Small "⏳ time until affordable" tag, given a cost and current CpS
+  function ttaTag(cost, cps) {
+    if (S.cookies >= cost) return '';
+    if (!(cps > 0)) return ''; // also catches NaN
+    return ` <span style="color:var(--text2)">· ⏳ ${Fmt.time((cost - S.cookies) / cps)}</span>`;
+  }
+
   function renderUpgradesTab(cpc) {
     const list = document.getElementById('ck-upgrades-list');
     if (!list) return;
-    let html = '';
+    const cps = computeCps(S);
+    // Info banner explaining the upgrades mechanic
+    let html = `<button class="ck-info-banner" onclick="ClickerGame_help()">
+        <span>ℹ️</span><span>Upgrades are <b>permanent one-time boosts</b>. The ⏳ timer shows how long until you can afford each one. <u>How does this game work?</u></span>
+      </button>`;
 
     // Click upgrades
     CLICK_UPGRADES.forEach(u => {
@@ -1256,7 +1372,7 @@ const AchievementSystem = (() => {
         <div class="upg-icon">👆</div>
         <div class="upg-info">
           <div class="upg-name">${u.name}</div>
-          <div class="upg-cost text-gold">🍪 ${Fmt.format(u.cost)}</div>
+          <div class="upg-cost text-gold">🍪 ${Fmt.format(u.cost)}${ttaTag(u.cost, cps)}</div>
         </div>
         <div class="upg-effect text-green">×${u.mul} click</div>
       </button>`;
@@ -1274,14 +1390,17 @@ const AchievementSystem = (() => {
           <div class="upg-icon">${b.icon}</div>
           <div class="upg-info">
             <div class="upg-name">${u.name}</div>
-            <div class="upg-cost text-gold">🍪 ${Fmt.format(u.cost)}</div>
+            <div class="upg-cost text-gold">🍪 ${Fmt.format(u.cost)}${ttaTag(u.cost, cps)}</div>
           </div>
           <div class="upg-effect text-green">×${u.mul} ${b.name}</div>
         </button>`;
       });
     });
 
-    list.innerHTML = html || '<div class="center text-muted mt-12" style="padding:20px">Buy buildings to unlock upgrades!</div>';
+    // Only the info banner present → no upgrades available yet
+    const hasUpgrades = html.indexOf('upgrade-item') !== -1;
+    list.innerHTML = hasUpgrades ? html
+      : html + '<div class="center text-muted mt-12" style="padding:20px">Click the cookie and buy buildings to unlock upgrades!</div>';
   }
 
   function renderBuildingsTab() {
@@ -1474,6 +1593,11 @@ const AchievementSystem = (() => {
         }
         .upgrade-item:active, .building-item:active { border-color:var(--accent); }
         .upgrade-item.locked, .building-item.locked { opacity:0.55; }
+        .ck-info-banner { display:flex; gap:8px; align-items:flex-start; text-align:left; width:100%;
+          background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius-sm);
+          padding:9px 11px; font-size:12px; color:var(--text2); line-height:1.45; }
+        .ck-info-banner b { color:var(--text); } .ck-info-banner u { color:var(--accent); }
+        .ck-info-banner:active { border-color:var(--accent); }
         .upg-icon, .bld-icon { font-size:24px; flex-shrink:0; }
         .upg-info, .bld-info { flex:1; }
         .upg-name, .bld-name { font-size:14px; font-weight:600; }
@@ -1542,7 +1666,7 @@ const AchievementSystem = (() => {
     S.allTimeBaked = (S.allTimeBaked || 0) + cpc;
     S.totalClicks++;
     floatNum(e.clientX, e.clientY, '+' + Fmt.format(cpc, 1));
-    if (navigator.vibrate) navigator.vibrate(30);
+    Haptics.vibrate(30);
     checkAchievements();
   };
 
@@ -1557,7 +1681,7 @@ const AchievementSystem = (() => {
     S.cookies -= cost;
     S.buildings[id] += n;
     if (!S.buildingUpgrades[id]) S.buildingUpgrades[id] = [false, false, false];
-    if (navigator.vibrate) navigator.vibrate(40);
+    Haptics.vibrate(40);
     checkAchievements();
     renderAll();
   };
@@ -1569,7 +1693,7 @@ const AchievementSystem = (() => {
     S.cookies -= u.cost;
     S.clickUpgrades[id] = true;
     Toast.show('👆', 'Upgrade Purchased', u.name);
-    if (navigator.vibrate) navigator.vibrate(40);
+    Haptics.vibrate(40);
   };
 
   window.ClickerGame_buyBuildingUpgrade = function(buildingId, tier) {
@@ -1581,7 +1705,23 @@ const AchievementSystem = (() => {
     if (!S.buildingUpgrades[buildingId]) S.buildingUpgrades[buildingId] = [false, false, false];
     S.buildingUpgrades[buildingId][tier] = true;
     Toast.show('⬆️', 'Upgrade Purchased', u.name);
-    if (navigator.vibrate) navigator.vibrate(40);
+    Haptics.vibrate(40);
+  };
+
+  window.ClickerGame_help = function() {
+    Modal.show({
+      title: 'ℹ️ How Cookie Clicker works',
+      body: `
+        <p><b class="text-gold">🍪 Tap the cookie</b> to bake cookies by hand. Each tap gives "per click" cookies.</p>
+        <p class="mt-8"><b class="text-green">🏭 Buildings</b> bake cookies automatically every second (CpS). Each one you buy gets a little more expensive. Hold the ×10 / Max buttons to buy in bulk.</p>
+        <p class="mt-8"><b class="text-accent">⬆️ Upgrades</b> are permanent one-time multipliers for your clicks or a building. The ⏳ timer estimates how long until you can afford one at your current rate.</p>
+        <p class="mt-8"><b>🌕 Golden cookies</b> appear at random — tap them fast for a big cookie bonus.</p>
+        <p class="mt-8"><b>🍬 Sugar lumps</b> (unlock at 1M baked) grow slowly over time. Spend them on the Buildings tab to permanently level a building (+5% each).</p>
+        <p class="mt-8"><b>🔬 Tech</b> (50M) and <b>✨ Synergies</b> (1B) unlock deeper bonuses as you progress.</p>
+        <p class="mt-8"><b>✨ Ascend</b> resets your run for Heavenly Chips — each chip is +2% to all production forever. Sugar, tech and synergies are kept.</p>
+      `,
+      actions: [{ label: 'Got it', cls: 'btn-primary' }]
+    });
   };
 
   window.ClickerGame_tab = function(tab, btn) {
@@ -1601,7 +1741,7 @@ const AchievementSystem = (() => {
     S.sugar -= cost;
     S.buildingLevels[id] = lvl + 1;
     Toast.show('🍬', 'Building leveled', `${BUILDINGS.find(b=>b.id===id).name} → Lv.${lvl+1} (+5% output)`);
-    if (navigator.vibrate) navigator.vibrate(40);
+    Haptics.vibrate(40);
     renderAll();
   };
 
@@ -1614,7 +1754,7 @@ const AchievementSystem = (() => {
     S.tech[id] = true;
     AchievementSystem.unlock('tech1');
     Toast.show(t.icon, 'Research Complete', t.name);
-    if (navigator.vibrate) navigator.vibrate([40,30,60]);
+    Haptics.vibrate([40,30,60]);
     renderAll();
   };
 
@@ -1626,7 +1766,7 @@ const AchievementSystem = (() => {
     S.synergies[id] = true;
     AchievementSystem.unlock('syn1');
     Toast.show('✨', 'Synergy Unlocked', sy.name);
-    if (navigator.vibrate) navigator.vibrate([40,30,60]);
+    Haptics.vibrate([40,30,60]);
     renderAll();
   };
 
@@ -1676,7 +1816,7 @@ const AchievementSystem = (() => {
     floatNum(e.clientX, e.clientY, '🌕 +' + Fmt.format(bonus), '#f5c542');
     AchievementSystem.unlock('golden1');
     Toast.show('🌕', 'Golden Cookie!', '+' + Fmt.format(bonus) + ' cookies');
-    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+    Haptics.vibrate([80, 40, 80]);
     scheduleGoldenCookie();
   };
 
@@ -1689,6 +1829,13 @@ const AchievementSystem = (() => {
   function spawnGoldenCookie() {
     const gc = document.getElementById('ck-golden');
     if (!gc) return;
+    if (!Settings.get('golden')) {       // disabled in settings — check back later
+      gc.style.display = 'none';
+      goldenActive = false;
+      clearTimeout(goldenCookieTimer);
+      goldenCookieTimer = setTimeout(() => spawnGoldenCookie(), 60000);
+      return;
+    }
     const screenW = window.innerWidth;
     const screenH = document.getElementById('screen-clicker').clientHeight;
     gc.style.left = (20 + Math.random() * (screenW - 100)) + 'px';
@@ -1769,14 +1916,23 @@ const AchievementSystem = (() => {
   const AUTOSAVE_MS  = 30000;
   const OFFLINE_CAP  = 24 * 3600;
 
-  /* ── Enemy definitions per floor tier ──────────────────────── */
+  /* ── Zone definitions (one zone = 10 floors). hpMod/atkMod give
+        each zone a distinct feel; key is the guaranteed trophy that
+        drops from that zone's Guardian (the floor-10/20/... boss). ── */
   const FLOOR_THEMES = [
-    { name:'Forest',  enemies:['🐺','🦊','🐗','🐻','🦌'], boss:'🐲' },
-    { name:'Caves',   enemies:['🦇','🕷️','🦂','🐍','🦎'], boss:'👹' },
-    { name:'Castle',  enemies:['💀','🧟','👻','🧛','⚔️'], boss:'🧙' },
-    { name:'Volcano', enemies:['🔥','🌋','💥','🐉','😈'], boss:'👑' },
-    { name:'Abyss',   enemies:['🌑','⬛','🌀','👁️','🕳️'], boss:'💀' },
+    { name:'Whispering Forest', enemies:['🐺','🦊','🐗','🐻','🦌','🦅','🐝'], boss:'🐲', guardian:'🦁', key:'🍃', keyName:'Sylvan Sigil',  tip:'Beasts hunt in packs — steady damage wins.', hpMod:1.00, atkMod:1.00 },
+    { name:'Hollow Caves',      enemies:['🦇','🕷️','🦂','🐍','🦎','🪲','🐛'], boss:'👹', guardian:'🦖', key:'💎', keyName:'Cave Heart',    tip:'Thick hides soak hits — invest in Attack.',  hpMod:1.25, atkMod:0.95 },
+    { name:'Sunken Marsh',      enemies:['🐸','🦟','🐊','🪱','🐢','🦠'],       boss:'🐙', guardian:'🐊', key:'🫧', keyName:'Bog Pearl',     tip:'Venom stings — keep your HP high.',          hpMod:1.05, atkMod:1.30 },
+    { name:'Cursed Castle',     enemies:['💀','🧟','👻','🧛','⚔️','🗡️','🛡️'], boss:'🧙', guardian:'👑', key:'🗝️', keyName:'Royal Seal',    tip:'The restless dead never tire.',              hpMod:1.35, atkMod:1.15 },
+    { name:'Frozen Peaks',      enemies:['🐻‍❄️','🦣','🐧','🦭','🦅','🌬️'],     boss:'🦬', guardian:'🐻‍❄️', key:'❄️', keyName:'Frost Core',    tip:'The cold punishes the under-geared.',        hpMod:1.50, atkMod:1.20 },
+    { name:'Molten Volcano',    enemies:['🔥','🌋','💥','🐉','😈','🦂'],       boss:'👺', guardian:'🐲', key:'🔥', keyName:'Ember Crown',   tip:'Everything hits harder in the heat.',        hpMod:1.40, atkMod:1.55 },
+    { name:'Astral Void',       enemies:['🌑','⬛','🌀','👁️','🛸','☄️'],       boss:'🪐', guardian:'👾', key:'🌌', keyName:'Void Shard',    tip:'Reality bends — only power matters.',        hpMod:1.85, atkMod:1.55 },
+    { name:'The Abyss',         enemies:['🕳️','👁️','🐙','🦑','🌫️','💀'],     boss:'🐉', guardian:'😱', key:'💀', keyName:'Abyssal Idol',  tip:'Only the strongest descend this far.',       hpMod:2.30, atkMod:1.90 },
   ];
+  function zoneIndex(floor) { return Math.floor((floor - 1) / 10); }
+  function themeFor(floor)  { return FLOOR_THEMES[zoneIndex(floor) % FLOOR_THEMES.length]; }
+  // A Guardian stands on the last floor of each zone (floor 10, 20, 30 …)
+  function isGuardianFloor(floor) { return floor % 10 === 0; }
 
   /* ── Stat upgrade costs ─────────────────────────────────────── */
   const STAT_DEFS = [
@@ -1787,40 +1943,61 @@ const AchievementSystem = (() => {
     { id:'spd',  name:'Attack Speed', icon:'⚡',  base:1,   costBase:300, costMul:1.22, max:5 },
   ];
 
-  /* ── Soul upgrades (post-rebirth) ───────────────────────────── */
+  /* ── Soul upgrades (post-rebirth) ────────────────────────────
+        One-time milestones plus three repeatable tracks so souls
+        always have somewhere to go, run after run. ───────────────── */
   const SOUL_UPGRADES = [
-    { id:'su1', name:'War Veteran',    icon:'🎖️', cost:1,  desc:'+10% DMG permanently',    apply: s => s.soulDmgMul += 0.10 },
-    { id:'su2', name:'Gold Rush',      icon:'💰', cost:1,  desc:'+20% Gold permanently',    apply: s => s.soulGoldMul += 0.20 },
-    { id:'su3', name:'Quick Start',    icon:'🚀', cost:2,  desc:'Start at floor 5',         apply: s => s.soulStartFloor = Math.max(s.soulStartFloor||0, 5) },
-    { id:'su4', name:'Iron Skin',      icon:'🛡️', cost:2,  desc:'+25% HP permanently',     apply: s => s.soulHpMul += 0.25 },
-    { id:'su5', name:'Lucky Strikes',  icon:'🍀', cost:3,  desc:'+10% Crit Chance',         apply: s => s.soulCritBonus = (s.soulCritBonus||0) + 10 },
-    { id:'su6', name:'Battle Hardened',icon:'🏆', cost:5,  desc:'×2 DMG permanently',      apply: s => s.soulDmgMul += 1.0 },
-    { id:'su7', name:'Dungeon Master', icon:'👑', cost:10, desc:'Start at floor 15',        apply: s => s.soulStartFloor = Math.max(s.soulStartFloor||0, 15) },
+    // One-time milestone unlocks
+    { id:'su3', name:'Quick Start',    icon:'🚀', cost:3,  desc:'Start each rebirth at floor 5',  apply: s => s.soulStartFloor = Math.max(s.soulStartFloor||0, 5) },
+    { id:'su5', name:'Lucky Strikes',  icon:'🍀', cost:4,  desc:'+10% Crit Chance permanently',   apply: s => s.soulCritBonus = (s.soulCritBonus||0) + 10 },
+    { id:'su7', name:'Dungeon Master', icon:'👑', cost:12, desc:'Start each rebirth at floor 15', apply: s => s.soulStartFloor = Math.max(s.soulStartFloor||0, 15) },
+    { id:'su8', name:'Soul Anchor',    icon:'⚓', cost:20, desc:'Start each rebirth at floor 30', apply: s => s.soulStartFloor = Math.max(s.soulStartFloor||0, 30) },
   ];
+  // Repeatable soul tracks: cost rises with each level so souls keep mattering
+  const SOUL_TRACKS = [
+    { id:'st_dmg',  name:'Soul Forge',   icon:'⚔️', base:2, inc:1, per:0.08, fmt:l=>`+${l*8}% Damage (×${(1+l*0.08).toFixed(2)})`,  apply:(s,l)=> s.soulDmgMul  = l*0.08 },
+    { id:'st_hp',   name:'Soul Ward',    icon:'🛡️', base:2, inc:1, per:0.10, fmt:l=>`+${l*10}% Max HP (×${(1+l*0.10).toFixed(2)})`, apply:(s,l)=> s.soulHpMul   = l*0.10 },
+    { id:'st_gold', name:'Soul Greed',   icon:'💰', base:2, inc:1, per:0.15, fmt:l=>`+${l*15}% Gold (×${(1+l*0.15).toFixed(2)})`,   apply:(s,l)=> s.soulGoldMul = l*0.15 },
+  ];
+  function soulTrackLvl(state, id) { return (state.soulLevels && state.soulLevels[id]) || 0; }
+  function soulTrackCost(track, lvl) { return track.base + track.inc * lvl; }
+  // Re-apply all repeatable soul track bonuses from stored levels (call on load)
+  function applySoulTracks(state) {
+    if (!state.soulLevels) state.soulLevels = {};
+    SOUL_TRACKS.forEach(t => t.apply(state, soulTrackLvl(state, t.id)));
+  }
 
   /* ── Gear ───────────────────────────────────────────────────── */
   const GEAR_SLOTS  = ['weapon','armor','ring'];
   const GEAR_RARITY = [
-    { name:'Common', cls:'',       mul:1.0, color:'var(--common)' },
-    { name:'Rare',   cls:'rare',   mul:1.4, color:'var(--rare)'   },
-    { name:'Epic',   cls:'epic',   mul:2.0, color:'var(--epic)'   },
+    { name:'Common',    cls:'',       mul:1.0, color:'var(--common)' },
+    { name:'Rare',      cls:'rare',   mul:1.45, color:'var(--rare)'   },
+    { name:'Epic',      cls:'epic',   mul:2.1, color:'var(--epic)'   },
+    { name:'Legendary', cls:'legend', mul:3.2, color:'var(--gold)'   },
   ];
 
   /* ── Skill tree (skill points, prereq-gated) ───────────────── */
   const UNLOCK_SKILLS = 10; // max floor reached to unlock the skill tree
   const SKILLS = [
-    // Might
-    { id:'k_atk1',  branch:'Might',    name:'Sharpen',          icon:'⚔️', max:5, cost:1, req:null,     desc:l=>`+${l*6}% Attack` },
-    { id:'k_multi', branch:'Might',    name:'Multi-Strike',     icon:'🗡️', max:5, cost:2, req:'k_atk1', desc:l=>`${l*5}% chance to hit twice` },
-    { id:'k_cleave',branch:'Might',    name:'Power Tap',        icon:'🪓', max:1, cost:5, req:'k_multi',desc:_=>`Taps deal +100% damage` },
-    // Vitality
-    { id:'k_hp1',   branch:'Vitality', name:'Toughness',        icon:'❤️', max:5, cost:1, req:null,     desc:l=>`+${l*8}% Max HP` },
-    { id:'k_life',  branch:'Vitality', name:'Lifesteal',        icon:'🩸', max:5, cost:2, req:'k_hp1',  desc:l=>`Heal ${l*2}% of damage dealt` },
-    { id:'k_regen', branch:'Vitality', name:'Regeneration',     icon:'💚', max:3, cost:3, req:'k_life', desc:l=>`Regen ${l*2}%/s of Max HP` },
-    // Fortune
-    { id:'k_gold1', branch:'Fortune',  name:'Greed',            icon:'💰', max:5, cost:1, req:null,     desc:l=>`+${l*10}% Gold` },
-    { id:'k_crit',  branch:'Fortune',  name:'Deadeye',          icon:'🎯', max:5, cost:2, req:'k_gold1',desc:l=>`+${l*3}% Crit Chance` },
-    { id:'k_drop',  branch:'Fortune',  name:'Treasure Hunter',  icon:'💎', max:3, cost:3, req:'k_crit', desc:l=>`+${l*5}% chance for rare/epic gear` },
+    // Might — offense
+    { id:'k_atk1',  branch:'Might',    name:'Sharpen',          icon:'⚔️', max:10, cost:1, req:null,     reqLvl:0, desc:l=>`+${l*5}% Attack` },
+    { id:'k_multi', branch:'Might',    name:'Multi-Strike',     icon:'🗡️', max:5,  cost:2, req:'k_atk1', reqLvl:3, desc:l=>`${l*5}% chance to hit twice` },
+    { id:'k_exec',  branch:'Might',    name:'Executioner',      icon:'☠️', max:5,  cost:3, req:'k_multi',reqLvl:1, desc:l=>`+${l*8}% damage vs bosses & elites` },
+    { id:'k_cleave',branch:'Might',    name:'Power Tap',        icon:'🪓', max:5,  cost:4, req:'k_exec', reqLvl:1, desc:l=>`Taps deal +${l*40}% damage` },
+    // Vitality — survival
+    { id:'k_hp1',   branch:'Vitality', name:'Toughness',        icon:'❤️', max:10, cost:1, req:null,     reqLvl:0, desc:l=>`+${l*6}% Max HP` },
+    { id:'k_life',  branch:'Vitality', name:'Lifesteal',        icon:'🩸', max:5,  cost:2, req:'k_hp1',  reqLvl:3, desc:l=>`Heal ${l*2}% of damage dealt` },
+    { id:'k_regen', branch:'Vitality', name:'Regeneration',     icon:'💚', max:5,  cost:3, req:'k_life', reqLvl:1, desc:l=>`Regen ${l*1.5}%/s of Max HP` },
+    { id:'k_wind',  branch:'Vitality', name:'Second Wind',      icon:'🌬️', max:5,  cost:4, req:'k_regen',reqLvl:1, desc:l=>`Revive at +${l*8}% HP after dying` },
+    // Fortune — rewards
+    { id:'k_gold1', branch:'Fortune',  name:'Greed',            icon:'💰', max:10, cost:1, req:null,     reqLvl:0, desc:l=>`+${l*8}% Gold` },
+    { id:'k_crit',  branch:'Fortune',  name:'Deadeye',          icon:'🎯', max:8,  cost:2, req:'k_gold1',reqLvl:3, desc:l=>`+${l*3}% Crit Chance` },
+    { id:'k_drop',  branch:'Fortune',  name:'Treasure Hunter',  icon:'💎', max:5,  cost:3, req:'k_crit', reqLvl:1, desc:l=>`+${l*4}% chance for rare+ gear` },
+    { id:'k_ess',   branch:'Fortune',  name:'Soul Siphon',      icon:'🔮', max:5,  cost:4, req:'k_drop', reqLvl:1, desc:l=>`+${l*20}% Essence from bosses` },
+    // Arcane — tempo
+    { id:'k_focus', branch:'Arcane',   name:'Focus',            icon:'🧿', max:8,  cost:2, req:null,     reqLvl:0, desc:l=>`+${l*8}% Crit Damage` },
+    { id:'k_haste', branch:'Arcane',   name:'Haste',            icon:'⚡', max:5,  cost:3, req:'k_focus',reqLvl:2, desc:l=>`+${(l*0.15).toFixed(2)} Attack Speed` },
+    { id:'k_momentum',branch:'Arcane', name:'Bloodlust',        icon:'🔥', max:5,  cost:5, req:'k_haste',reqLvl:1, desc:l=>`+${l*3}% damage per wave cleared (caps ${l*30}%)` },
   ];
   function skillLvl(state, id) { return (state.skills && state.skills[id]) || 0; }
 
@@ -1829,6 +2006,7 @@ const AchievementSystem = (() => {
     const g = state.gear;
     if (!g.weapon || !g.armor || !g.ring) return 1;
     const minRar = Math.min(g.weapon.rarity, g.armor.rarity, g.ring.rarity);
+    if (minRar >= 3) return 1.60; // all Legendary
     if (minRar >= 2) return 1.35; // all Epic
     if (minRar >= 1) return 1.15; // all Rare+
     return 1;
@@ -1836,16 +2014,25 @@ const AchievementSystem = (() => {
   /* Enchant multiplier for a gear slot: +8% per enchant level */
   function enchantMul(state, slot) { return 1 + 0.08 * ((state.enchant && state.enchant[slot]) || 0); }
 
-  function randomGear(floor, luck) {
+  // quality: 0 = normal boss, 1 = elite, 2 = guardian (better rarity odds)
+  function randomGear(floor, luck, quality) {
     luck = luck || 0;
+    quality = quality || 0;
     const slot   = GEAR_SLOTS[Math.floor(Math.random() * GEAR_SLOTS.length)];
-    const rarIdx = Math.random() < 0.1 + luck ? 2 : Math.random() < 0.3 + luck * 1.5 ? 1 : 0;
+    // Rarity roll, improved by Treasure Hunter (luck) and monster quality
+    const qBonus = quality * 0.12;
+    const r = Math.random();
+    let rarIdx;
+    if (r < 0.03 + luck * 0.5 + qBonus)      rarIdx = 3; // Legendary
+    else if (r < 0.15 + luck + qBonus * 1.5) rarIdx = 2; // Epic
+    else if (r < 0.45 + luck * 1.5)          rarIdx = 1; // Rare
+    else                                     rarIdx = 0; // Common
     const rar    = GEAR_RARITY[rarIdx];
-    const icons  = { weapon:['⚔️','🗡️','🪓','🔱','🏹'], armor:['🛡️','🧥','⛓️','🪬','💎'], ring:['💍','🔮','📿','🌀','🔑'] };
+    const icons  = { weapon:['⚔️','🗡️','🪓','🔱','🏹'], armor:['🛡️','🧥','⛓️','🪬','💠'], ring:['💍','🔮','📿','🌀','🔑'] };
     const icon   = icons[slot][Math.floor(Math.random() * 5)];
-    const base   = 5 + Math.floor(floor * 1.5);
+    const base   = 6 + Math.floor(Math.pow(floor, 1.35) * 1.4);
     const statIdx = slot === 'weapon' ? 0 : slot === 'armor' ? 1 : Math.floor(Math.random() * 3);
-    const value   = Math.floor(base * rar.mul * (0.8 + Math.random() * 0.4));
+    const value   = Math.floor(base * rar.mul * (0.85 + Math.random() * 0.35));
     return { slot, icon, rarity: rarIdx, name: rar.name + ' ' + (slot.charAt(0).toUpperCase()+slot.slice(1)), statIdx, value };
   }
 
@@ -1864,6 +2051,11 @@ const AchievementSystem = (() => {
     AchievementSystem.register('d_skill',     '⭐','Skilled',           'Learn your first skill.',      'Reach floor 10');
     AchievementSystem.register('d_enchant',   '🔨','Blacksmith',        'Enchant a piece of gear.',     'Collect essence from bosses');
     AchievementSystem.register('d_set',       '🧩','Matching Set',      'Equip a full Rare+ gear set.', 'Match all 3 gear rarities');
+    AchievementSystem.register('d_legend',    '🌟','Legend',            'Find a Legendary item.',       'Slay elites & guardians');
+    AchievementSystem.register('d_guardian',  '🛡️','Gatekeeper',        'Defeat a Zone Guardian.',      'Clear floor 10');
+    AchievementSystem.register('d_elite',     '✨','Elite Hunter',      'Slay an Elite monster.',       'Elites appear at random');
+    AchievementSystem.register('d_floor100',  '🐉','Abyssal',           'Reach floor 100.',             'Descend forever');
+    AchievementSystem.register('d_keys',      '🗝️','Key Collector',     'Collect 4 different zone keys.','Beat zone guardians');
   }
 
   /* ── State ─────────────────────────────────────────────────── */
@@ -1884,7 +2076,9 @@ const AchievementSystem = (() => {
       maxFloor:      0,
       rebirths:      0,
       souls:         0,
-      soulUpgrades:  {},
+      allTimeSouls:  0,  // total souls ever earned (display only)
+      soulUpgrades:  {}, // one-time soul upgrades: id -> true
+      soulLevels:    {}, // repeatable soul upgrades: id -> level
       soulDmgMul:    0,
       soulGoldMul:   0,
       soulHpMul:     0,
@@ -1893,12 +2087,14 @@ const AchievementSystem = (() => {
       stats: { atk:0, hp:0, crit:0, crit2:0, spd:0 }, // levels, not values
       gear:  { weapon:null, armor:null, ring:null },
       hp:    null, // current hp — set on enter
+      waveStreak:    0,  // waves cleared without dying (drives Bloodlust)
       // ── Gated layers (persist across rebirth) ──
       skillPoints:  0,
       skills:       {},  // skillId -> level
       maxFloorEver: 0,   // highest floor reached, ever (drives skill points)
       essence:      0,   // crafting currency from bosses
       enchant:      { weapon:0, armor:0, ring:0 },
+      keys:         {},  // zoneKeyName -> count (collected guardian trophies)
       savedAt: Date.now(),
     };
   }
@@ -1910,7 +2106,7 @@ const AchievementSystem = (() => {
     let gearBonus = 0;
     if (state.gear.weapon) gearBonus += state.gear.weapon.value * enchantMul(state, 'weapon');
     const soulMul  = 1 + (state.soulDmgMul || 0);
-    const skillMul = 1 + 0.06 * skillLvl(state, 'k_atk1');
+    const skillMul = 1 + 0.05 * skillLvl(state, 'k_atk1');
     return Math.floor((base * soulMul + gearBonus) * skillMul * gearSetBonus(state));
   }
 
@@ -1920,31 +2116,48 @@ const AchievementSystem = (() => {
     let gearBonus = 0;
     if (state.gear.armor) gearBonus += state.gear.armor.value * 5 * enchantMul(state, 'armor');
     const soulMul  = 1 + (state.soulHpMul || 0);
-    const skillMul = 1 + 0.08 * skillLvl(state, 'k_hp1');
+    const skillMul = 1 + 0.06 * skillLvl(state, 'k_hp1');
     return Math.floor((base * soulMul + gearBonus) * skillMul * gearSetBonus(state));
   }
 
   function heroCrit(state) {
     const lvl = state.stats.crit;
     const ringCrit = state.gear.ring?.statIdx === 2 ? state.gear.ring.value / 10 * enchantMul(state, 'ring') : 0;
-    return Math.min(75, lvl * 2 + (state.soulCritBonus || 0) + 3 * skillLvl(state, 'k_crit') + ringCrit);
+    return Math.min(80, lvl * 2 + (state.soulCritBonus || 0) + 3 * skillLvl(state, 'k_crit') + ringCrit);
   }
 
   function heroCritDmg(state) {
     const lvl = state.stats.crit2;
     const ringDmg = state.gear.ring?.statIdx === 1 ? state.gear.ring.value * enchantMul(state, 'ring') : 0;
-    return 150 + lvl * 10 + ringDmg;
+    return 150 + lvl * 10 + ringDmg + 8 * skillLvl(state, 'k_focus');
   }
 
   function goldMul(state) {
-    return (1 + (state.soulGoldMul || 0)) * (1 + 0.10 * skillLvl(state, 'k_gold1'));
+    return (1 + (state.soulGoldMul || 0)) * (1 + 0.08 * skillLvl(state, 'k_gold1'));
   }
-  function dropLuck(state) { return 0.05 * skillLvl(state, 'k_drop'); }
+  function dropLuck(state) { return 0.04 * skillLvl(state, 'k_drop'); }
   function skillsUnlocked(state) { return (state.maxFloorEver || 0) >= UNLOCK_SKILLS; }
 
   function heroSpeed(state) {
     const lvl = state.stats.spd;
-    return Math.min(5, 1 + lvl * 0.2); // attacks per second
+    return Math.min(8, 1 + lvl * 0.2 + 0.15 * skillLvl(state, 'k_haste')); // attacks per second
+  }
+
+  // Bloodlust: damage ramps as you clear waves without dying
+  function bloodlustMul(state) {
+    const l = skillLvl(state, 'k_momentum');
+    if (!l) return 1;
+    return 1 + l * Math.min(0.30, 0.03 * (state.waveStreak || 0));
+  }
+  // Executioner: bonus damage vs bosses & elites
+  function executionerMul(state, enemy) {
+    const l = skillLvl(state, 'k_exec');
+    if (!l || !enemy || (!enemy.isBoss && !enemy.isElite)) return 1;
+    return 1 + 0.08 * l;
+  }
+  // Combined situational damage multiplier applied at hit time
+  function combatDmgMul(state, enemy) {
+    return bloodlustMul(state) * executionerMul(state, enemy);
   }
 
   function statCost(stat, level) {
@@ -1979,13 +2192,26 @@ const AchievementSystem = (() => {
   let currentEnemy = null;
 
   function spawnEnemy() {
-    const theme = FLOOR_THEMES[Math.floor((S.floor - 1) / 10) % FLOOR_THEMES.length];
-    const isBoss = S.wave === 10;
-    const icon   = isBoss ? theme.boss : theme.enemies[Math.floor(Math.random() * theme.enemies.length)];
-    const floorPow = 1 + (S.floor - 1) * 0.12 + (S.wave - 1) * 0.01;
-    const maxHp    = Math.floor(30 * Math.pow(floorPow, 2.2)) * (isBoss ? 4 : 1);
-    const reward   = Math.floor(5 * floorPow * (isBoss ? 8 : 1) * goldMul(S));
-    currentEnemy   = { icon, isBoss, maxHp, hp: maxHp, reward, atk: Math.floor(3 * Math.pow(floorPow, 1.8)) };
+    const theme    = themeFor(S.floor);
+    const isBoss   = S.wave === 10;
+    const isGuard  = isBoss && isGuardianFloor(S.floor);   // zone Guardian
+    // Elites: occasional tougher normal monster with much better loot
+    const isElite  = !isBoss && Math.random() < 0.10;
+    // Difficulty: floors ramp harder than before, and waves matter within a floor
+    const floorPow = 1 + (S.floor - 1) * 0.14 + (S.wave - 1) * 0.03;
+    const hpMod    = theme.hpMod || 1;
+    const atkMod   = theme.atkMod || 1;
+    const tierMul  = isGuard ? 14 : isBoss ? 6 : isElite ? 3 : 1;
+    const maxHp    = Math.max(1, Math.floor(28 * Math.pow(floorPow, 2.3) * hpMod * tierMul));
+    const goldTier = isGuard ? 28 : isBoss ? 11 : isElite ? 4 : 1;
+    const reward   = Math.floor(6 * Math.pow(floorPow, 1.15) * goldTier * goldMul(S));
+    const atk      = Math.floor(4 * Math.pow(floorPow, 1.85) * atkMod * (isBoss ? 1.4 : 1));
+    let icon;
+    if (isGuard)      icon = theme.guardian || theme.boss;
+    else if (isBoss)  icon = theme.boss;
+    else              icon = theme.enemies[Math.floor(Math.random() * theme.enemies.length)];
+    const name = isGuard ? `${theme.name} Guardian` : isBoss ? `${theme.name} Boss` : isElite ? 'Elite' : '';
+    currentEnemy = { icon, isBoss, isGuard, isElite, name, maxHp, hp: maxHp, reward, atk };
     renderEnemy();
   }
 
@@ -1993,19 +2219,26 @@ const AchievementSystem = (() => {
   function applyOfflineProgress(save) {
     const elapsed = Math.min((Date.now() - (save.savedAt || Date.now())) / 1000, OFFLINE_CAP);
     if (elapsed < 60) return;
-    // Simulate gold from kills at current floor
-    const spd = heroSpeed(save.data);
-    const atk = heroAtk(save.data);
-    const enemyHp = Math.floor(30 * Math.pow(1 + (save.data.floor - 1) * 0.12, 2.2));
-    const killsPerSec = (spd * atk) / enemyHp;
+    // Simulate gold from kills at current floor (matches live HP/reward curve)
+    const d = save.data;
+    const theme  = themeFor(d.floor || 1);
+    const fp     = 1 + ((d.floor || 1) - 1) * 0.14;
+    const spd    = heroSpeed(d);
+    const atk    = heroAtk(d);
+    const enemyHp = Math.max(1, Math.floor(28 * Math.pow(fp, 2.3) * (theme.hpMod || 1)));
+    const killsPerSec = Math.min((spd * atk) / enemyHp, spd); // can't out-kill attack rate
     const kills = Math.floor(killsPerSec * elapsed);
-    const goldPerKill = Math.floor(5 * (1 + (save.data.floor - 1) * 0.12) * goldMul(save.data));
+    const goldPerKill = Math.floor(6 * Math.pow(fp, 1.15) * goldMul(d));
     const earned = kills * goldPerKill;
     if (earned < 1) return;
-    save.data.gold     = (save.data.gold || 0) + earned;
-    save.data.totalGold = (save.data.totalGold || 0) + earned;
-    save.data.allTimeGold = (save.data.allTimeGold || 0) + earned;
-    save.data.kills    = (save.data.kills || 0) + kills;
+    d.gold        = (d.gold || 0) + earned;
+    d.totalGold   = (d.totalGold || 0) + earned;
+    d.allTimeGold = (d.allTimeGold || 0) + earned;
+    d.kills       = (d.kills || 0) + kills;
+    if (!Settings.get('offlineModal')) {
+      Toast.show('👋', 'Welcome back', `Slew ${Fmt.format(kills)} foes · +${Fmt.format(earned)} gold`);
+      return;
+    }
     Modal.show({
       title: '👋 Welcome back!',
       body: `Away for <strong>${Fmt.time(elapsed)}</strong>.<br>
@@ -2021,7 +2254,8 @@ const AchievementSystem = (() => {
     });
     const save = SaveSystem.read(GAME_ID, SAVE_VERSION);
     if (save) {
-      const legacy = save.data.maxFloorEver === undefined; // pre-skill-tree save
+      const legacy = save.data.maxFloorEver === undefined;   // pre-skill-tree save
+      const preSoulTracks = save.data.soulLevels === undefined; // pre soul-track rework
       applyOfflineProgress(save);
       S = Object.assign(defaultState(), save.data);
       // Retroactively credit existing progress toward the skill tree (one-time)
@@ -2029,9 +2263,21 @@ const AchievementSystem = (() => {
         S.maxFloorEver = Math.max(S.maxFloor || 0, S.floor || 0);
         S.skillPoints  = (S.skillPoints || 0) + S.maxFloorEver;
       }
+      // Migrate removed one-time soul upgrades: refund their souls so the
+      // player can re-spend them on the new repeatable tracks, and clear the
+      // old flat multipliers (the tracks are now the single source of truth).
+      if (preSoulTracks) {
+        const REMOVED = { su1:1, su2:1, su4:2, su6:5 };
+        let refund = 0;
+        Object.keys(REMOVED).forEach(id => { if (S.soulUpgrades && S.soulUpgrades[id]) { refund += REMOVED[id]; delete S.soulUpgrades[id]; } });
+        S.souls = (S.souls || 0) + refund;
+        S.soulLevels = {};
+        S.soulDmgMul = 0; S.soulHpMul = 0; S.soulGoldMul = 0;
+      }
     } else {
       S = defaultState();
     }
+    applySoulTracks(S); // recompute repeatable soul bonuses from stored levels
     if (S.hp === null || S.hp > heroMaxHp(S)) S.hp = heroMaxHp(S);
     S.savedAt = Date.now();
   }
@@ -2046,18 +2292,94 @@ const AchievementSystem = (() => {
     if (S.floor >= 5)  AchievementSystem.unlock('d_floor5');
     if (S.floor >= 20) AchievementSystem.unlock('d_floor20');
     if (S.floor >= 50) AchievementSystem.unlock('d_floor50');
+    if (S.floor >= 100) AchievementSystem.unlock('d_floor100');
     if (S.kills >= 100)  AchievementSystem.unlock('d_kill100');
     if (S.kills >= 1000) AchievementSystem.unlock('d_kill1k');
     if (S.taps  >= 1000) AchievementSystem.unlock('d_tap1k');
     if (S.allTimeGold >= 1e6) AchievementSystem.unlock('d_gold1m');
     if (S.rebirths >= 1) AchievementSystem.unlock('d_rebirth1');
     if (S.rebirths >= 3) AchievementSystem.unlock('d_rebirth3');
-    // Check for epic gear
-    GEAR_SLOTS.forEach(slot => { if (S.gear[slot]?.rarity === 2) AchievementSystem.unlock('d_epic'); });
+    // Check for epic / legendary gear
+    GEAR_SLOTS.forEach(slot => {
+      const rar = S.gear[slot]?.rarity;
+      if (rar >= 2) AchievementSystem.unlock('d_epic');
+      if (rar >= 3) AchievementSystem.unlock('d_legend');
+    });
+    if (S.keys && Object.keys(S.keys).length >= 4) AchievementSystem.unlock('d_keys');
     if (gearSetBonus(S) > 1) AchievementSystem.unlock('d_set');
   }
 
   /* ── Combat resolution ─────────────────────────────────────── */
+
+  // Roll & resolve a gear drop. Better gear auto-equips; duplicates/worse
+  // gear is auto-sold for gold so every drop still rewards you.
+  function grantGear(quality) {
+    const gear = randomGear(S.floor, dropLuck(S), quality);
+    const equipped = S.gear[gear.slot];
+    if (!equipped || gear.value > equipped.value) {
+      S.gear[gear.slot] = gear;
+      Toast.show(gear.icon, gear.name + ' Equipped!', `+${gear.value} ${STAT_DEFS[gear.statIdx].name}`, gear.rarity >= 2);
+    } else {
+      const sell = gear.value * 3 * (gear.rarity + 1);
+      S.gold += sell; S.totalGold += sell; S.allTimeGold = (S.allTimeGold || 0) + sell;
+      Toast.show(gear.icon, gear.name + ' (sold)', `+${Fmt.format(sell)} gold`, gear.rarity >= 2);
+    }
+    if (gear.rarity >= 3) AchievementSystem.unlock('d_legend');
+    if (gear.rarity >= 2) AchievementSystem.unlock('d_epic');
+  }
+
+  function onHeroDeath() {
+    const reviveFrac = Math.min(0.95, 0.4 + 0.08 * skillLvl(S, 'k_wind'));
+    S.hp = heroMaxHp(S) * reviveFrac;
+    S.wave = Math.max(1, S.wave - 1);
+    S.waveStreak = 0; // lose Bloodlust momentum
+    Toast.show('💀', 'You fell!', 'Back to wave ' + S.wave);
+    Haptics.vibrate([90, 50, 90]);
+    spawnEnemy();
+  }
+
+  function onEnemyKilled() {
+    const e = currentEnemy;
+    S.gold      += e.reward;
+    S.totalGold += e.reward;
+    S.allTimeGold = (S.allTimeGold || 0) + e.reward;
+    S.kills++;
+    S.waveStreak = (S.waveStreak || 0) + 1;
+
+    if (e.isElite) { AchievementSystem.unlock('d_elite'); grantGear(1); }
+
+    if (e.isBoss) {
+      S.maxFloor = Math.max(S.maxFloor, S.floor);
+      const essBase = 1 + Math.floor(S.floor / 10);
+      const essMul  = 1 + 0.20 * skillLvl(S, 'k_ess');
+      const essGain = Math.max(1, Math.round(essBase * essMul * (e.isGuard ? 3 : 1)));
+      S.essence = (S.essence || 0) + essGain;
+      grantGear(e.isGuard ? 2 : 0);
+      if (e.isGuard) {
+        const theme = themeFor(S.floor);
+        if (!S.keys) S.keys = {};
+        S.keys[theme.keyName] = (S.keys[theme.keyName] || 0) + 1;
+        AchievementSystem.unlock('d_guardian');
+        Toast.show(theme.key, 'Guardian Slain!', `Claimed the ${theme.keyName} · +${essGain} 💎`, true);
+      }
+      S.floor++;
+      S.wave = 1;
+      // One skill point per new highest floor reached
+      if (S.floor > (S.maxFloorEver || 0)) {
+        const gained = S.floor - (S.maxFloorEver || 0);
+        S.maxFloorEver = S.floor;
+        S.skillPoints = (S.skillPoints || 0) + gained;
+        if (skillsUnlocked(S)) Toast.show('⭐', 'Skill Point!', `+${gained} to spend in the Skills tab.`);
+      }
+      Haptics.vibrate([60, 40, 100]);
+    } else {
+      S.wave = Math.min(S.wave + 1, 10);
+    }
+    S.hp = Math.min(S.hp + heroMaxHp(S) * 0.12, heroMaxHp(S)); // heal 12% on kill
+    checkAchievements();
+    spawnEnemy();
+  }
+
   function resolveHit() {
     if (!currentEnemy || !S) return;
     let dmg = heroAtk(S);
@@ -2066,6 +2388,7 @@ const AchievementSystem = (() => {
     const ms = skillLvl(S, 'k_multi');
     const multi = ms && Math.random() * 100 < ms * 5;
     if (multi) dmg *= 2;
+    dmg = Math.max(1, Math.floor(dmg * combatDmgMul(S, currentEnemy)));
 
     currentEnemy.hp -= dmg;
 
@@ -2081,54 +2404,10 @@ const AchievementSystem = (() => {
       floatNum(r.left + r.width/2, r.top + r.height/3, tag + Fmt.format(dmg), isCrit || multi ? '#f5c542' : '#e05555');
     }
 
-    // Hero takes damage
+    // Hero takes damage per attack interval
     S.hp -= currentEnemy.atk * (1 / heroSpeed(S));
-    if (S.hp <= 0) {
-      S.hp = heroMaxHp(S) * 0.4; // respawn at 40% HP, pushed back a wave
-      S.wave = Math.max(1, S.wave - 1);
-      Toast.show('💀', 'You died!', 'Back to wave ' + S.wave);
-      spawnEnemy();
-      return;
-    }
-
-    // Enemy dead
-    if (currentEnemy.hp <= 0) {
-      S.gold     += currentEnemy.reward;
-      S.totalGold += currentEnemy.reward;
-      S.allTimeGold = (S.allTimeGold || 0) + currentEnemy.reward;
-      S.kills++;
-
-      // Boss: gear drop + essence + floor advance
-      if (currentEnemy.isBoss) {
-        S.maxFloor = Math.max(S.maxFloor, S.floor);
-        // Essence drop (crafting currency)
-        const essGain = 1 + Math.floor(S.floor / 10);
-        S.essence = (S.essence || 0) + essGain;
-        const gear = randomGear(S.floor, dropLuck(S));
-        const equipped = S.gear[gear.slot];
-        if (!equipped || gear.value > equipped.value) {
-          S.gear[gear.slot] = gear;
-          Toast.show(gear.icon, gear.name + ' Equipped!', `+${gear.value} to ${STAT_DEFS[gear.statIdx].name}`, gear.rarity === 2);
-          if (gear.rarity === 2) AchievementSystem.unlock('d_epic');
-        }
-        S.floor++;
-        S.wave = 1;
-        // Skill points for each new highest floor reached
-        if (S.floor > (S.maxFloorEver || 0)) {
-          const gained = S.floor - (S.maxFloorEver || 0);
-          S.maxFloorEver = S.floor;
-          S.skillPoints = (S.skillPoints || 0) + gained;
-          if (skillsUnlocked(S)) Toast.show('⭐', 'Skill Point!', `+${gained} to spend in the Skills tab.`);
-        }
-        if (navigator.vibrate) navigator.vibrate([60, 40, 100]);
-      } else {
-        S.wave = Math.min(S.wave + 1, 10);
-      }
-      S.hp = Math.min(S.hp + heroMaxHp(S) * 0.12, heroMaxHp(S)); // heal 12% on kill
-      checkAchievements();
-      spawnEnemy();
-    }
-
+    if (S.hp <= 0) { onHeroDeath(); return; }
+    if (currentEnemy.hp <= 0) onEnemyKilled();
     renderCombat();
   }
 
@@ -2136,16 +2415,17 @@ const AchievementSystem = (() => {
   window.DungeonGame_tap = function(e) {
     if (!S || !currentEnemy) return;
     S.taps++;
-    const cleave = skillLvl(S, 'k_cleave') ? 2 : 1;
-    let dmg = Math.floor(heroAtk(S) * 2.5 * cleave);
+    const cleaveMul = 1 + 0.4 * skillLvl(S, 'k_cleave'); // Power Tap: +40% per level
+    let dmg = Math.floor(heroAtk(S) * 2.5 * cleaveMul);
     const isCrit = Math.random() * 100 < heroCrit(S);
     if (isCrit) dmg = Math.floor(dmg * heroCritDmg(S) / 100);
+    dmg = Math.max(1, Math.floor(dmg * combatDmgMul(S, currentEnemy)));
     currentEnemy.hp -= dmg;
     const ls = skillLvl(S, 'k_life');
     if (ls) S.hp = Math.min(heroMaxHp(S), S.hp + dmg * 0.02 * ls);
     floatNum(e.clientX, e.clientY, (isCrit ? '💥' : '👊') + Fmt.format(dmg), isCrit ? '#f5c542' : '#fff');
-    if (navigator.vibrate) navigator.vibrate(25);
-    if (currentEnemy.hp <= 0) resolveHit(); // trigger kill via main path
+    Haptics.vibrate(25);
+    if (currentEnemy.hp <= 0) { onEnemyKilled(); renderCombat(); }
     else renderEnemy();
     checkAchievements();
   };
@@ -2161,24 +2441,32 @@ const AchievementSystem = (() => {
     if (S.gold < cost) return;
     S.gold -= cost;
     S.stats[id] += n;
-    if (navigator.vibrate) navigator.vibrate(40);
+    Haptics.vibrate(40);
     renderStats();
     renderCombat();
   };
+
+  function skillReqMet(sk) {
+    return !sk.req || skillLvl(S, sk.req) >= (sk.reqLvl || 1);
+  }
 
   window.DungeonGame_buySkill = function(id) {
     const sk = SKILLS.find(s => s.id === id);
     if (!sk) return;
     const lvl = skillLvl(S, id);
     if (lvl >= sk.max) return;
-    if (sk.req && skillLvl(S, sk.req) < 1) { Toast.show('🔒', 'Locked', 'Unlock the previous skill first.'); return; }
+    if (!skillReqMet(sk)) {
+      const reqSk = SKILLS.find(s => s.id === sk.req);
+      Toast.show('🔒', 'Locked', `Requires ${reqSk ? reqSk.name : 'previous skill'} Lv.${sk.reqLvl || 1}.`);
+      return;
+    }
     if ((S.skillPoints || 0) < sk.cost) { Toast.show('⭐', 'Not enough points', `Need ${sk.cost} skill points.`); return; }
     S.skillPoints -= sk.cost;
     if (!S.skills) S.skills = {};
     S.skills[id] = lvl + 1;
     AchievementSystem.unlock('d_skill');
     Toast.show(sk.icon, sk.name + ' → Lv.' + (lvl + 1), sk.desc(lvl + 1));
-    if (navigator.vibrate) navigator.vibrate(40);
+    Haptics.vibrate(40);
     renderSkillTab();
     renderCombat();
   };
@@ -2194,7 +2482,7 @@ const AchievementSystem = (() => {
     S.enchant[slot] = lvl + 1;
     AchievementSystem.unlock('d_enchant');
     Toast.show('🔨', 'Gear Enchanted', `${g.name} +${(lvl+1)*8}% (Lv.${lvl+1})`);
-    if (navigator.vibrate) navigator.vibrate([40,30,60]);
+    Haptics.vibrate([40,30,60]);
     renderGearTab();
     renderCombat();
   };
@@ -2207,39 +2495,68 @@ const AchievementSystem = (() => {
     S.soulUpgrades[id] = true;
     u.apply(S);
     Toast.show(u.icon, 'Soul Power', u.name + ': ' + u.desc);
-    if (navigator.vibrate) navigator.vibrate([60,40,80]);
+    Haptics.vibrate([60,40,80]);
     renderSoulTab();
+    renderCombat();
   };
 
+  window.DungeonGame_buySoulTrack = function(id) {
+    const t = SOUL_TRACKS.find(t => t.id === id);
+    if (!t) return;
+    const lvl  = soulTrackLvl(S, id);
+    const cost = soulTrackCost(t, lvl);
+    if ((S.souls || 0) < cost) { Toast.show('💫', 'Not enough souls', `Need ${cost} souls.`); return; }
+    S.souls -= cost;
+    if (!S.soulLevels) S.soulLevels = {};
+    S.soulLevels[id] = lvl + 1;
+    t.apply(S, lvl + 1);
+    if (S.hp > heroMaxHp(S)) S.hp = heroMaxHp(S);
+    Toast.show(t.icon, t.name + ' → Lv.' + (lvl + 1), t.fmt(lvl + 1));
+    Haptics.vibrate([60,40,80]);
+    renderSoulTab();
+    renderCombat();
+  };
+
+  const REBIRTH_FLOOR = 50;
+  // Souls scale with how deep you got — going past your previous best pays off.
+  function soulsForFloor(maxFloor) {
+    if (maxFloor < REBIRTH_FLOOR) return 0;
+    return Math.max(1, Math.floor(Math.pow(maxFloor / 10, 1.35)));
+  }
+
   window.DungeonGame_rebirth = function() {
-    if (S.maxFloor < 50) {
-      Toast.show('⚠️', 'Not yet', 'Reach floor 50 to rebirth.');
+    if (S.maxFloor < REBIRTH_FLOOR) {
+      Toast.show('⚠️', 'Not yet', `Reach floor ${REBIRTH_FLOOR} this run to rebirth.`);
       return;
     }
-    const souls = Math.floor(S.maxFloor / 10);
+    const souls = soulsForFloor(S.maxFloor);
     Modal.show({
       title: '🌟 Rebirth',
-      body: `Reset gold and stats, keep gear and soul upgrades.<br>Gain <strong class="text-accent">${souls} Souls</strong> to spend on permanent bonuses.<br><br>
-             Your max floor of <strong>${S.maxFloor}</strong> will be preserved.`,
+      body: `Reset your <b>gold, stats and floor</b> — keep gear, skills, enchants and soul powers.<br><br>
+             Gain <strong class="text-accent">${souls} Souls</strong> for reaching floor <strong>${S.maxFloor}</strong> this run.<br>
+             <span class="text-muted" style="font-size:13px">You'll start over near floor ${Math.max(1, S.soulStartFloor || 1)} and must climb again — but reaching <b>deeper than ${S.maxFloor}</b> next time grants even more souls.</span>`,
       actions: [
         { label: 'Cancel', cls: '' },
         { label: '🌟 Rebirth', cls: 'btn-primary', fn: () => {
-          const maxFloor = S.maxFloor;
           const gear     = S.gear;
           const rebirths = S.rebirths + 1;
           const soulMods = { soulDmgMul: S.soulDmgMul, soulGoldMul: S.soulGoldMul, soulHpMul: S.soulHpMul, soulCritBonus: S.soulCritBonus, soulStartFloor: S.soulStartFloor };
-          const soulUpgrades = S.soulUpgrades;
+          const soulUpgrades = S.soulUpgrades, soulLevels = S.soulLevels;
           const allTimeGold  = S.allTimeGold;
+          const allTimeSouls = (S.allTimeSouls || 0) + souls;
           const kills        = S.kills;
           // Meta layers persist across rebirth
           const keepSkillPts = S.skillPoints, keepSkills = S.skills, keepMaxEver = S.maxFloorEver;
-          const keepEssence  = S.essence, keepEnchant = S.enchant;
+          const keepEssence  = S.essence, keepEnchant = S.enchant, keepKeys = S.keys;
+          const carrySouls   = (S.souls || 0) + souls;
           S = defaultState();
-          S.maxFloor    = maxFloor;
+          // maxFloor intentionally RESET — you must re-climb to rebirth again
           S.gear        = gear;
           S.rebirths    = rebirths;
-          S.souls       = (S.souls || 0) + souls;
+          S.souls       = carrySouls;
+          S.allTimeSouls = allTimeSouls;
           S.soulUpgrades = soulUpgrades;
+          S.soulLevels  = soulLevels;
           S.allTimeGold  = allTimeGold;
           S.kills        = kills;
           S.skillPoints = keepSkillPts;
@@ -2247,12 +2564,19 @@ const AchievementSystem = (() => {
           S.maxFloorEver= keepMaxEver;
           S.essence     = keepEssence;
           S.enchant     = keepEnchant;
+          S.keys        = keepKeys;
           Object.assign(S, soulMods);
+          applySoulTracks(S);
           S.floor = Math.max(1, S.soulStartFloor || 1);
+          S.wave  = 1;
+          // maxFloor resets on rebirth (must re-climb to rebirth again), but
+          // seed it to the start floor so the Floors tab can navigate the
+          // floors the hero already begins on.
+          S.maxFloor = Math.max(0, S.floor - 1);
           S.hp = heroMaxHp(S);
           AchievementSystem.unlock('d_rebirth1');
           if (rebirths >= 3) AchievementSystem.unlock('d_rebirth3');
-          Toast.show('🌟', 'Reborn!', 'You have ' + S.souls + ' Souls to spend.');
+          Toast.show('🌟', 'Reborn!', `+${souls} souls · ${S.souls} to spend`);
           spawnEnemy();
           renderAll2();
         }}
@@ -2266,6 +2590,22 @@ const AchievementSystem = (() => {
     S.wave  = 1;
     spawnEnemy();
     renderCombat();
+  };
+
+  window.DungeonGame_help = function() {
+    Modal.show({
+      title: 'ℹ️ How Idle Dungeon works',
+      body: `
+        <p>Your hero <b>auto-attacks</b> the monster. <b class="text-gold">Tap the enemy</b> for big bonus hits.</p>
+        <p class="mt-8">Each floor has <b>10 waves</b>. Wave 10 is a <b>👑 Boss</b>; clearing it advances a floor and drops gear + 💎 essence. Every 10th floor ends with a tough <b class="text-gold">🛡️ Guardian</b> that drops a rare zone <b>key</b>.</p>
+        <p class="mt-8"><b>✨ Elites</b> appear at random — tougher, but far better loot.</p>
+        <p class="mt-8"><b class="text-green">💰 Gold</b> upgrades your stats. <b>Gear</b> auto-equips when it's an upgrade (duplicates auto-sell). <b>💎 Essence</b> enchants gear. Matching all three gear rarities grants a <b>set bonus</b>.</p>
+        <p class="mt-8"><b>⭐ Skills</b> (unlock floor ${UNLOCK_SKILLS}) cost points earned for each new deepest floor — higher tiers need levels in the skill above them.</p>
+        <p class="mt-8"><b class="text-accent">🌟 Rebirth</b> at floor ${REBIRTH_FLOOR}+ resets your run (gold, stats, floor) for <b>Souls</b>. The deeper you reached, the more souls you earn. Spend them on repeatable <b>Soul Powers</b> and one-time milestones that make every run stronger. You must climb back up to rebirth again — so souls truly add up over time.</p>
+        <p class="mt-8">If you die you drop back a wave and lose your <b>🔥 Bloodlust</b> streak, so keep your HP up.</p>
+      `,
+      actions: [{ label: 'Got it', cls: 'btn-primary' }]
+    });
   };
 
   /* ── Render ────────────────────────────────────────────────── */
@@ -2297,17 +2637,29 @@ const AchievementSystem = (() => {
     const bar = document.getElementById('dn-enemy-bar');
     const name = document.getElementById('dn-enemy-name');
     if (!el || !currentEnemy) return;
-    el.textContent = currentEnemy.icon;
-    const pct = Math.max(0, currentEnemy.hp / currentEnemy.maxHp * 100);
+    const e = currentEnemy;
+    el.textContent = e.icon;
+    el.classList.toggle('elite', !!e.isElite && !e.isBoss);
+    el.classList.toggle('guardian', !!e.isGuard);
+    const pct = Math.max(0, e.hp / e.maxHp * 100);
     bar.style.width = pct + '%';
-    bar.className = 'progress-fill ' + (currentEnemy.isBoss ? 'gold' : '');
-    name.textContent = (currentEnemy.isBoss ? '👑 BOSS  ' : '') + 'HP: ' + Fmt.format(Math.max(0,currentEnemy.hp)) + ' / ' + Fmt.format(currentEnemy.maxHp);
+    bar.className = 'progress-fill ' + (e.isBoss ? 'gold' : (e.isElite ? 'epic' : ''));
+    let tag = '';
+    if (e.isGuard)      tag = '🛡️ GUARDIAN  ';
+    else if (e.isBoss)  tag = '👑 BOSS  ';
+    else if (e.isElite) tag = '✨ ELITE  ';
+    name.textContent = tag + 'HP: ' + Fmt.format(Math.max(0,e.hp)) + ' / ' + Fmt.format(e.maxHp);
   }
 
   function renderCombat() {
-    const theme = FLOOR_THEMES[Math.floor((S.floor - 1) / 10) % FLOOR_THEMES.length];
+    const theme = themeFor(S.floor);
     const fl = document.getElementById('dn-floor-info');
-    if (fl) fl.textContent = `${theme.name} · Floor ${S.floor} · Wave ${S.wave}/10`;
+    if (fl) {
+      let bl = '';
+      const blm = bloodlustMul(S);
+      if (blm > 1.001) bl = ` · <span style="color:var(--gold)">🔥 +${Math.round((blm-1)*100)}%</span>`;
+      fl.innerHTML = `${theme.name} · Floor ${S.floor} · Wave ${S.wave}/10${isGuardianFloor(S.floor) && S.wave===10 ? ' · <span style="color:var(--gold)">🛡️ Guardian</span>':''}${bl}`;
+    }
     const hpEl = document.getElementById('dn-hero-hp');
     const hpBar = document.getElementById('dn-hero-bar');
     const maxHp = heroMaxHp(S);
@@ -2318,6 +2670,7 @@ const AchievementSystem = (() => {
       let extra = '';
       if ((S.maxFloorEver || 0) >= 1) extra += ` <span style="color:var(--accent);font-size:13px">💎 ${S.essence || 0}</span>`;
       if (skillsUnlocked(S)) extra += ` <span style="color:var(--accent);font-size:13px">⭐ ${S.skillPoints || 0}</span>`;
+      if ((S.souls || 0) > 0) extra += ` <span style="color:var(--accent);font-size:13px">💫 ${S.souls}</span>`;
       goldEl.innerHTML = '💰 ' + Fmt.format(S.gold) + extra;
     }
     // Reveal Skills tab once unlocked
@@ -2381,11 +2734,26 @@ const AchievementSystem = (() => {
     const setMul = gearSetBonus(S);
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:10px">';
     // Set bonus banner
-    const setTxt = setMul > 1.2 ? 'All Epic — +35% all stats' : setMul > 1 ? 'All Rare+ — +15% all stats' : 'Match all 3 rarities (Rare+) for a set bonus';
+    const setTxt = setMul >= 1.6 ? 'All Legendary — +60% all stats'
+                 : setMul > 1.2  ? 'All Epic — +35% all stats'
+                 : setMul > 1    ? 'All Rare+ — +15% all stats'
+                 : 'Match all 3 slots at the same rarity (Rare+) for a set bonus';
     html += `<div style="background:var(--bg2);border:1px solid ${setMul>1?'var(--epic)':'var(--border)'};border-radius:var(--radius-sm);padding:10px;font-size:13px">
       <span style="font-weight:600">🧩 Set Bonus:</span> <span style="color:${setMul>1?'var(--green)':'var(--text2)'}">${setTxt}</span>
-      <div style="font-size:12px;color:var(--text2);margin-top:4px">💎 Essence: <span class="text-accent">${S.essence || 0}</span> — used to enchant gear (+8% each)</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">💎 Essence: <span class="text-accent">${S.essence || 0}</span> — enchant gear (+8% each). Better gear auto-equips; duplicates auto-sell for gold.</div>
     </div>`;
+    // Zone-key trophies collected from Guardians
+    const keyEntries = Object.entries(S.keys || {}).filter(([,n]) => n > 0);
+    if (keyEntries.length) {
+      const keyIcons = keyEntries.map(([name,n]) => {
+        const t = FLOOR_THEMES.find(z => z.keyName === name);
+        return `<span title="${name}${n>1?' ×'+n:''}">${t?t.key:'🗝️'}${n>1?`<span style="font-size:10px">×${n}</span>`:''}</span>`;
+      }).join(' ');
+      html += `<div style="background:var(--bg2);border:1px solid var(--gold);border-radius:var(--radius-sm);padding:10px;font-size:13px">
+        <span style="font-weight:600">🗝️ Guardian Keys:</span> <span style="font-size:18px">${keyIcons}</span>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Rare trophies dropped by Zone Guardians on floors 10, 20, 30…</div>
+      </div>`;
+    }
     GEAR_SLOTS.forEach(slot => {
       const g = S.gear[slot];
       const color = g ? GEAR_RARITY[g.rarity].color : 'var(--text2)';
@@ -2417,20 +2785,23 @@ const AchievementSystem = (() => {
     SKILLS.forEach(s => { (branches[s.branch] = branches[s.branch] || []).push(s); });
     let html = `<div style="padding:10px;display:flex;flex-direction:column;gap:8px">
       <div style="font-size:13px">⭐ Skill Points: <span class="text-accent" style="font-weight:700">${S.skillPoints || 0}</span>
-      <span style="color:var(--text2);font-size:12px"> · earn 1 per new highest floor</span></div>`;
+      <span style="color:var(--text2);font-size:12px"> · earn 1 per new deepest floor. Higher tiers need points in the skill above.</span></div>`;
     Object.keys(branches).forEach(br => {
       html += `<div class="menu-section-title" style="padding:6px 2px 2px">${br}</div>`;
       branches[br].forEach(sk => {
         const lvl = skillLvl(S, sk.id);
         const maxed = lvl >= sk.max;
-        const reqMet = !sk.req || skillLvl(S, sk.req) >= 1;
+        const reqMet = skillReqMet(sk);
         const aff = (S.skillPoints || 0) >= sk.cost && reqMet && !maxed;
+        const reqSk = sk.req ? SKILLS.find(s => s.id === sk.req) : null;
+        // Preview shows current level's effect, or the first level's if unbought
+        const descLvl = maxed ? lvl : Math.max(lvl, 1);
         html += `<button class="upgrade-item ${aff || maxed ? '' : 'locked'}" ${maxed ? '' : `onclick="DungeonGame_buySkill('${sk.id}')"`} style="${lvl>0?'border-color:var(--accent)':''}">
           <div class="upg-icon">${sk.icon}</div>
           <div class="upg-info">
             <div class="upg-name">${sk.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}/${sk.max}</span></div>
-            <div style="font-size:12px;color:var(--text2)">${sk.desc(Math.max(lvl,1))}</div>
-            ${!reqMet ? '<div class="ach-hint" style="color:var(--text2)">🔒 Needs previous skill</div>' : ''}
+            <div style="font-size:12px;color:var(--text2)">${sk.desc(descLvl)}${!maxed && lvl>0 ? ` <span style="color:var(--green)">→ ${sk.desc(lvl+1)}</span>` : ''}</div>
+            ${!reqMet ? `<div class="ach-hint" style="color:var(--text2)">🔒 Needs ${reqSk?reqSk.name:'previous skill'} Lv.${sk.reqLvl||1}</div>` : ''}
           </div>
           <div class="text-accent" style="font-size:13px;font-weight:600;flex-shrink:0">${maxed ? 'MAX' : '⭐ ' + sk.cost}</div>
         </button>`;
@@ -2443,26 +2814,44 @@ const AchievementSystem = (() => {
   function renderSoulTab() {
     const list = document.getElementById('dn-content-area');
     if (!list || activeTab2 !== 'soul') return;
-    const canRebirth = S.maxFloor >= 50;
+    const canRebirth = S.maxFloor >= REBIRTH_FLOOR;
+    const reward = soulsForFloor(S.maxFloor);
     let html = `<div style="padding:10px;display:flex;flex-direction:column;gap:10px">
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
+      <div style="background:var(--bg2);border:1px solid ${canRebirth?'var(--accent)':'var(--border)'};border-radius:var(--radius-sm);padding:12px">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div>
             <div style="font-size:15px;font-weight:600">🌟 Rebirth</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:2px">Reset gold & stats, keep gear</div>
-            <div style="font-size:12px;color:var(--text2)">Max floor: ${S.maxFloor} · Rebirths: ${S.rebirths}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">Reset gold, stats & floor — keep gear, skills & souls</div>
+            <div style="font-size:12px;color:var(--text2)">This run's max floor: <b>${S.maxFloor}</b> · Rebirths: ${S.rebirths}</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:13px;color:var(--accent)">💫 ${S.souls} Souls</div>
-            <div style="font-size:12px;color:var(--text2)">+${Math.floor(S.maxFloor/10)} on rebirth</div>
+            <div style="font-size:12px;color:var(--text2)">earned ${Fmt.format(S.allTimeSouls||0)} total</div>
           </div>
         </div>
         <button class="btn btn-primary mt-8" style="${canRebirth?'':'opacity:0.5'}" onclick="DungeonGame_rebirth()">
-          ${canRebirth ? '🌟 Rebirth Now' : '🔒 Reach floor 50 to rebirth'}
+          ${canRebirth ? `🌟 Rebirth for +${reward} Souls` : `🔒 Reach floor ${REBIRTH_FLOOR} this run`}
         </button>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px">Souls scale with depth — push past floor ${S.maxFloor || REBIRTH_FLOOR} next run for a bigger payout.</div>
       </div>`;
 
-    html += '<div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;padding:4px 2px">Soul Upgrades</div>';
+    // Repeatable soul tracks — a permanent sink so souls always matter
+    html += '<div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;padding:4px 2px">Soul Powers · repeatable</div>';
+    SOUL_TRACKS.forEach(t => {
+      const lvl  = soulTrackLvl(S, t.id);
+      const cost = soulTrackCost(t, lvl);
+      const aff  = (S.souls || 0) >= cost;
+      html += `<button class="upgrade-item ${aff?'':'locked'}" onclick="DungeonGame_buySoulTrack('${t.id}')">
+        <div class="upg-icon">${t.icon}</div>
+        <div class="upg-info">
+          <div class="upg-name">${t.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}</span></div>
+          <div style="font-size:12px;color:var(--text2)">${t.fmt(lvl)} <span style="color:var(--green)">→ ${t.fmt(lvl+1)}</span></div>
+        </div>
+        <div class="text-accent" style="font-size:13px;font-weight:600;flex-shrink:0">💫 ${cost}</div>
+      </button>`;
+    });
+
+    html += '<div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;padding:8px 2px 4px">Soul Milestones · one-time</div>';
     SOUL_UPGRADES.forEach(u => {
       const bought = S.soulUpgrades[u.id];
       const canAfford = S.souls >= u.cost && !bought;
@@ -2482,18 +2871,27 @@ const AchievementSystem = (() => {
   function renderFloorTab() {
     const list = document.getElementById('dn-content-area');
     if (!list || activeTab2 !== 'floors') return;
-    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
+    let html = `<div style="padding:10px;display:flex;flex-direction:column;gap:6px">
+      <div style="font-size:12px;color:var(--text2);padding:0 2px 4px">Jump to any cleared floor. Each zone spans 10 floors and ends with a <span style="color:var(--gold)">🛡️ Guardian</span> that drops a key.</div>`;
     const max = Math.max(S.maxFloor + 1, S.floor);
+    let lastZone = -1;
     for (let f = 1; f <= max; f++) {
-      const theme = FLOOR_THEMES[Math.floor((f-1)/10) % FLOOR_THEMES.length];
+      const theme = themeFor(f);
+      const zi = zoneIndex(f);
+      if (zi !== lastZone) {
+        lastZone = zi;
+        html += `<div class="menu-section-title" style="padding:8px 2px 2px">${theme.key} ${theme.name} <span style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0">— ${theme.tip}</span></div>`;
+      }
       const isCurrent = f === S.floor;
       const isLocked  = f > S.maxFloor + 1;
+      const guard     = isGuardianFloor(f);
+      const icon      = guard ? (theme.guardian||theme.boss) : theme.enemies[f % theme.enemies.length];
       html += `<button class="upgrade-item ${isLocked?'locked':''}" onclick="DungeonGame_setFloor(${f})"
-        style="${isCurrent?'border-color:var(--accent)':''}">
-        <div class="upg-icon">${theme.enemies[f % 5]}</div>
+        style="${isCurrent?'border-color:var(--accent)':(guard?'border-color:var(--gold)':'')}">
+        <div class="upg-icon">${icon}</div>
         <div class="upg-info">
-          <div class="upg-name">Floor ${f} — ${theme.name}</div>
-          <div style="font-size:12px;color:var(--text2)">${isLocked?'🔒 Clear previous floor':'Boss: '+theme.boss}</div>
+          <div class="upg-name">Floor ${f} — ${theme.name}${guard?' <span style="color:var(--gold);font-size:11px">🛡️ Guardian</span>':''}</div>
+          <div style="font-size:12px;color:var(--text2)">${isLocked?'🔒 Clear previous floor':(guard?`Drops the ${theme.key} ${theme.keyName}`:'Boss at wave 10: '+theme.boss)}</div>
         </div>
         ${isCurrent?'<div style="color:var(--accent);font-size:12px">Now</div>':''}
       </button>`;
@@ -2539,7 +2937,15 @@ const AchievementSystem = (() => {
           filter:drop-shadow(0 2px 8px rgba(0,0,0,0.5));
         }
         #dn-enemy-icon:active { transform:scale(0.9); }
+        #dn-enemy-icon.elite    { filter:drop-shadow(0 0 10px var(--epic)); animation:dn-pulse 1.1s ease-in-out infinite alternate; }
+        #dn-enemy-icon.guardian { filter:drop-shadow(0 0 14px var(--gold)); animation:dn-pulse 0.8s ease-in-out infinite alternate; }
+        @keyframes dn-pulse { from { transform:scale(1); } to { transform:scale(1.08); } }
         #dn-enemy-name { font-size:12px; color:var(--text2); }
+        #screen-dungeon .progress-fill.epic { background:var(--epic); }
+        #dn-help { position:absolute; top:10px; right:10px; width:30px; height:30px; border-radius:50%;
+                   background:var(--bg3); border:1px solid var(--border); font-size:15px; z-index:5;
+                   display:flex; align-items:center; justify-content:center; }
+        #dn-help:active { background:var(--border); }
         .dn-bar-wrap { width:100%; }
         #dn-hero-info { display:flex; flex-direction:column; align-items:stretch; gap:4px; margin-top:10px; font-size:13px; }
         #dn-hero-hp { color:var(--text2); font-size:12px; }
@@ -2554,7 +2960,8 @@ const AchievementSystem = (() => {
         #screen-dungeon .upgrade-item.can-buy { border-color:var(--green); }
         #screen-dungeon .upgrade-item.can-buy:active { border-color:var(--accent); }
       </style>
-      <div id="dn-main">
+      <div id="dn-main" style="position:relative">
+        <button id="dn-help" aria-label="How to play" onclick="DungeonGame_help()">ℹ️</button>
         <div id="dn-combat-zone">
           <div id="dn-floor-info"></div>
           <div id="dn-gold"></div>
@@ -2590,7 +2997,7 @@ const AchievementSystem = (() => {
     if (!S || !currentEnemy) return;
     // Regeneration skill
     const rg = skillLvl(S, 'k_regen');
-    if (rg) S.hp = Math.min(heroMaxHp(S), S.hp + heroMaxHp(S) * 0.02 * rg * dt);
+    if (rg) S.hp = Math.min(heroMaxHp(S), S.hp + heroMaxHp(S) * 0.015 * rg * dt);
     combatTimer += dt;
     const spd = 1 / heroSpeed(S);
     while (combatTimer >= spd) {
