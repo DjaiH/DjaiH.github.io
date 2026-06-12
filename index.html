@@ -124,7 +124,8 @@ scrollbar-color: var(--border) transparent;
 #hud-title { font-size: 17px; font-weight: 600; flex: 1; }
 #hud-save  { font-size: 18px; opacity: 0; transition: opacity 0.3s; }
 #hud-save.flash { opacity: 1; }
-#hud-mute  { font-size: 20px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; }
+#hud-info  { font-size: 19px; line-height: 1; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--bg3); flex-shrink: 0; }
+#hud-info:active { background: var(--border); }
 
 /* ─── SCREENS ────────────────────────────────────────────────── */
 .screen {
@@ -410,7 +411,7 @@ scrollbar-color: var(--border) transparent;
     <button id="hud-back" aria-label="Back">←</button>
     <span id="hud-title"></span>
     <span id="hud-save" title="Saving…">💾</span>
-    <button id="hud-mute" aria-label="Mute">🔇</button>
+    <button id="hud-info" class="hidden" aria-label="How to play">ℹ️</button>
   </div>
 
   <!-- MENU SCREEN -->
@@ -680,14 +681,22 @@ const HUD = (() => {
   return { show, hide, flashSave };
 })();
 document.getElementById('hud-back').addEventListener('click', () => Router.go('menu'));
+document.getElementById('hud-info').addEventListener('click', () => Router.showHelp());
 
 /* ── Router ───────────────────────────────────────────────────── */
 const Router = (() => {
   const screens = {};
   let current = null;
+  const infoBtn = document.getElementById('hud-info');
 
-  function register(id, { onEnter, onLeave, title } = {}) {
-    screens[id] = { onEnter, onLeave, title };
+  // onHelp: optional () => void invoked by the HUD ℹ️ info button for this screen
+  function register(id, { onEnter, onLeave, title, onHelp } = {}) {
+    screens[id] = { onEnter, onLeave, title, onHelp };
+  }
+
+  function showHelp() {
+    const fn = screens[current]?.onHelp;
+    if (fn) fn();
   }
 
   function go(id) {
@@ -704,6 +713,8 @@ const Router = (() => {
       const t = screens[id]?.title || id;
       HUD.show(t);
     }
+    // Show the HUD info button only on screens that registered help text
+    if (infoBtn) infoBtn.classList.toggle('hidden', !screens[id]?.onHelp);
     if (screens[id]?.onEnter) screens[id].onEnter();
   }
 
@@ -736,7 +747,7 @@ const Router = (() => {
   // Start on menu
   window.addEventListener('DOMContentLoaded', () => go('menu'));
 
-  return { go, register };
+  return { go, register, showHelp };
 })();
 
 /* ════════════════════════════════════════════════════════════════
@@ -1401,10 +1412,7 @@ const SettingsScreen = (() => {
     const list = document.getElementById('ck-upgrades-list');
     if (!list) return;
     const cps = computeCps(S);
-    // Info banner explaining the upgrades mechanic
-    let html = `<button class="ck-info-banner" onclick="ClickerGame_help()">
-        <span>ℹ️</span><span>Upgrades are <b>permanent one-time boosts</b>. The ⏳ timer shows how long until you can afford each one. <u>How does this game work?</u></span>
-      </button>`;
+    let html = '';
 
     // Click upgrades
     CLICK_UPGRADES.forEach(u => {
@@ -1440,10 +1448,7 @@ const SettingsScreen = (() => {
       });
     });
 
-    // Only the info banner present → no upgrades available yet
-    const hasUpgrades = html.indexOf('upgrade-item') !== -1;
-    list.innerHTML = hasUpgrades ? html
-      : html + '<div class="center text-muted mt-12" style="padding:20px">Click the cookie and buy buildings to unlock upgrades!</div>';
+    list.innerHTML = html || '<div class="center text-muted mt-12" style="padding:20px">Click the cookie and buy buildings to unlock upgrades!</div>';
   }
 
   function renderBuildingsTab() {
@@ -1636,11 +1641,6 @@ const SettingsScreen = (() => {
         }
         .upgrade-item:active, .building-item:active { border-color:var(--accent); }
         .upgrade-item.locked, .building-item.locked { opacity:0.55; }
-        .ck-info-banner { display:flex; gap:8px; align-items:flex-start; text-align:left; width:100%;
-          background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius-sm);
-          padding:9px 11px; font-size:12px; color:var(--text2); line-height:1.45; }
-        .ck-info-banner b { color:var(--text); } .ck-info-banner u { color:var(--accent); }
-        .ck-info-banner:active { border-color:var(--accent); }
         .upg-icon, .bld-icon { font-size:24px; flex-shrink:0; }
         .upg-info, .bld-info { flex:1; }
         .upg-name, .bld-name { font-size:14px; font-weight:600; }
@@ -1925,6 +1925,7 @@ const SettingsScreen = (() => {
   /* ── Register with Router ──────────────────────────────────── */
   Router.register('clicker', {
     title: '🍪 Cookie Clicker',
+    onHelp: () => ClickerGame_help(),
     onEnter: () => {
       loadGame();
       buildUI();
@@ -2985,10 +2986,6 @@ const SettingsScreen = (() => {
         @keyframes dn-pulse { from { transform:scale(1); } to { transform:scale(1.08); } }
         #dn-enemy-name { font-size:12px; color:var(--text2); }
         #screen-dungeon .progress-fill.epic { background:var(--epic); }
-        #dn-help { position:absolute; top:10px; right:10px; width:30px; height:30px; border-radius:50%;
-                   background:var(--bg3); border:1px solid var(--border); font-size:15px; z-index:5;
-                   display:flex; align-items:center; justify-content:center; }
-        #dn-help:active { background:var(--border); }
         .dn-bar-wrap { width:100%; }
         #dn-hero-info { display:flex; flex-direction:column; align-items:stretch; gap:4px; margin-top:10px; font-size:13px; }
         #dn-hero-hp { color:var(--text2); font-size:12px; }
@@ -3004,7 +3001,6 @@ const SettingsScreen = (() => {
         #screen-dungeon .upgrade-item.can-buy:active { border-color:var(--accent); }
       </style>
       <div id="dn-main" style="position:relative">
-        <button id="dn-help" aria-label="How to play" onclick="DungeonGame_help()">ℹ️</button>
         <div id="dn-combat-zone">
           <div id="dn-floor-info"></div>
           <div id="dn-gold"></div>
@@ -3060,6 +3056,7 @@ const SettingsScreen = (() => {
   /* ── Register ──────────────────────────────────────────────── */
   Router.register('dungeon', {
     title: '⚔️ Idle Dungeon',
+    onHelp: () => DungeonGame_help(),
     onEnter: () => {
       loadGame();
       buildUI();
