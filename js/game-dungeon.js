@@ -214,6 +214,8 @@
       equip:       { weapon: null, armor: null, tool: null, amulet: null },
       action:      null,             // { type:'skill', id } | { type:'combat', id }
       combatStyle: 'attack',         // attack | strength | defence (Accurate/Aggressive/Defensive)
+      mastery:     {},               // actionId -> mastery xp (per-action progression)
+      shop:        {},               // shop upgrade id -> level (coin sink)
       maxCombat:   0,
       kills:       0,
       actionsDone: 0,
@@ -232,6 +234,7 @@
   function maxHp() { return skillLevel('hitpoints') * 10; }
   function addXp(id, amount) {
     if (!amount) return;
+    amount = Math.round(amount * globalXpMul());   // Tome of Learning
     const before = skillLevel(id);
     S.skillsXp[id] = skillXp(id) + amount;
     const after = skillLevel(id);
@@ -258,20 +261,55 @@
   //  - mining level speeds Smithing; firemaking level cuts cooking burn.
   function actionEffTime(a) {
     let bonusPct = Math.min(0.30, skillLevel(a.skill) * 0.0025);   // up to -30% from level
-    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + bonus('amulet', 'gspeed');
+    bonusPct += masterySpeed(a.id);                                // per-action mastery
+    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + bonus('amulet', 'gspeed') + 0.03 * shopLvl('gloves');
     if (a.skill === 'smithing') bonusPct += Math.min(0.20, skillLevel('mining') * 0.002); // mining→smithing synergy
-    return Math.max(0.4, a.time * (1 - Math.min(0.6, bonusPct)));
+    return Math.max(0.3, a.time * (1 - Math.min(0.7, bonusPct)));
   }
   function cookBurnChance(a) {
     return Math.max(0, a.burn - skillLevel('cooking') * 0.01 - skillLevel('firemaking') * 0.003);
   }
   // Rare-drop multiplier: Amulet of Foraging/Skill/Glory boost gem chances.
   function rareBonus() { return 1 + bonus('amulet', 'rare'); }
-  // Cooking synergy: food heals more the higher your Cooking level (+0.5%/level).
-  function foodHeal(id) { return Math.floor((ITEMS[id].heal || 0) * (1 + 0.005 * skillLevel('cooking'))); }
+  // Cooking synergy + Iron Stomach shop upgrade: food heals more.
+  function foodHeal(id) { return Math.floor((ITEMS[id].heal || 0) * (1 + 0.005 * skillLevel('cooking') + 0.05 * shopLvl('stomach'))); }
+
+  /* ── Mastery: per-action progression (cap 50) ────────────────── */
+  const MASTERY_CAP = 50;
+  function masteryXpForLevel(L) { return Math.floor(40 * Math.pow(L, 2.2)); } // cumulative xp to reach L
+  function masteryXp(id)    { return (S.mastery && S.mastery[id]) || 0; }
+  function masteryLevel(id) { const xp = masteryXp(id); let L = 0; while (L < MASTERY_CAP && xp >= masteryXpForLevel(L + 1)) L++; return L; }
+  function masterySpeed(id) { return Math.min(0.20, masteryLevel(id) * 0.004); }  // up to -20% time
+  function masteryDouble(id){ return Math.min(0.30, masteryLevel(id) * 0.006); }  // up to +30% double yield
+  function addMastery(id, amount) {
+    if (!S.mastery) S.mastery = {};
+    const before = masteryLevel(id);
+    S.mastery[id] = masteryXp(id) + amount;
+    const after = masteryLevel(id);
+    if (after > before) {
+      const a = ACTION[id];
+      Toast.show('🎯', 'Mastery ' + after + (after >= MASTERY_CAP ? ' (MAX)' : ''), (a ? a.name : id) + ' — faster + more double yields');
+      if (after >= MASTERY_CAP) AchievementSystem.unlock('r_mastery');
+    }
+  }
+
+  /* ── Coin Store: permanent, stacking, coin-sink upgrades ─────── */
+  const SHOP = [
+    { id:'gloves',  name:'Gathering Gloves', icon:'🧤', max:10, base:500,  mul:1.8, fmt:l=>`+${l*3}% gathering speed` },
+    { id:'tome',    name:'Tome of Learning', icon:'📖', max:10, base:2000, mul:2.0, fmt:l=>`+${l*2}% XP from everything` },
+    { id:'stomach', name:'Iron Stomach',     icon:'🍖', max:10, base:900,  mul:1.7, fmt:l=>`+${l*5}% food healing` },
+    { id:'whet',    name:'Whetstone',        icon:'🎯', max:10, base:1500, mul:1.9, fmt:l=>`+${l*3}% combat damage` },
+    { id:'charm',   name:'Offline Charm',    icon:'⏳', max:12, base:1200, mul:1.6, fmt:l=>`+${l*2}h offline cap (${24 + l*2}h total)` },
+  ];
+  function shopLvl(id) { return (S.shop && S.shop[id]) || 0; }
+  function shopDef(id) { return SHOP.find(s => s.id === id); }
+  function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
+  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome'); }
+  function combatDmgMul() { return 1 + 0.03 * shopLvl('whet'); }
+  function offlineCap()   { return OFFLINE_CAP + shopLvl('charm') * 7200; }
 
   /* ── Combat math ─────────────────────────────────────────────── */
-  function playerMaxHit() { return Math.floor(2 + (skillLevel('strength') + bonus('weapon', 'str') + bonus('amulet', 'str')) * 0.22); }
+  function playerMaxHit() { return Math.floor((2 + (skillLevel('strength') + bonus('weapon', 'str') + bonus('amulet', 'str')) * 0.22) * combatDmgMul()); }
   function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + (bonus('weapon', 'acc') + bonus('amulet', 'acc')) / 48); }
   function playerDefRoll() { return (skillLevel('defence') + bonus('armor', 'def') + 8); }
   function hitChance(atkRoll, defRoll) { return atkRoll / (atkRoll + defRoll); }
@@ -313,21 +351,23 @@
       if (!hasInputs(a.inputs)) { Toast.show('🛑', 'Out of materials', 'Stopped ' + a.name); S.action = null; return false; }
       spendInputs(a.inputs);
     }
+    const dbl = Math.random() < masteryDouble(a.id);   // mastery: chance at double yield
     if (a.output) {
       const burned = a.burn && Math.random() < cookBurnChance(a);
       if (!burned) {
-        bankAdd(a.output, 1); addXp(a.skill, a.xp); maybeAutoEquip(a.output);
+        bankAdd(a.output, dbl ? 2 : 1); addXp(a.skill, a.xp); maybeAutoEquip(a.output);
         const ot = ITEMS[a.output] && ITEMS[a.output].type;
         if (ot === 'gem') AchievementSystem.unlock('r_gem');
         if (ITEMS[a.output] && ITEMS[a.output].slot === 'amulet') AchievementSystem.unlock('r_amulet');
         if (a.output === 'amulet_glory') AchievementSystem.unlock('r_glory');
       } else { addXp(a.skill, Math.floor(a.xp * 0.3)); Toast.show('💢', 'Burnt!', 'Ruined a ' + itemName(a.output)); }
     } else if (a.item) {
-      bankAdd(a.item, 1); addXp(a.skill, a.xp);
+      bankAdd(a.item, dbl ? 2 : 1); addXp(a.skill, a.xp);
       rollRareDrops(a);
     } else {
-      addXp(a.skill, a.xp); // firemaking: xp only
+      addXp(a.skill, dbl ? Math.round(a.xp * 1.5) : a.xp); // firemaking: no item, so double = bonus xp
     }
+    addMastery(a.id, a.xp);
     S.actionsDone++;
     return true;
   }
@@ -454,6 +494,20 @@
     Toast.show('🪙', 'Sold ' + q + '× ' + it.name, '+' + Fmt.format(gold) + ' coins');
     renderBankTab();
   };
+  window.IdleRealm_buyShop = function(id) {
+    const def = shopDef(id); if (!def) return;
+    const lvl = shopLvl(id);
+    if (lvl >= def.max) return;
+    const cost = shopCost(def, lvl);
+    if (bankCount('coins') < cost) { Toast.show('🪙', 'Not enough coins', `Need ${Fmt.format(cost)} coins`); return; }
+    bankRemove('coins', cost);
+    if (!S.shop) S.shop = {};
+    S.shop[id] = lvl + 1;
+    AchievementSystem.unlock('r_store');
+    Toast.show(def.icon, def.name + ' → Lv.' + (lvl + 1), def.fmt(lvl + 1));
+    Haptics.vibrate(40);
+    renderStoreTab(); renderTopbar(); renderActiveHeader();
+  };
 
   /* ── Achievements ────────────────────────────────────────────── */
   function registerAchievements() {
@@ -472,6 +526,8 @@
     AchievementSystem.register('r_gem',     '💍','Lapidary',        'Cut a gem.',                   'Find then cut a gem');
     AchievementSystem.register('r_amulet',  '📿','Jeweller',        'Craft an amulet.',             'Cut a gem, then craft');
     AchievementSystem.register('r_glory',   '🏵️','For Glory',        'Craft the Amulet of Glory.',   'Needs a Dragonstone');
+    AchievementSystem.register('r_mastery', '🎯','Master of One',    'Max an action to mastery 50.', 'Repeat one action a lot');
+    AchievementSystem.register('r_store',   '🛒','Big Spender',      'Buy a Store upgrade.',         'Sell loot, spend coins');
   }
   function checkAchievements() {
     if (S.kills >= 10)  AchievementSystem.unlock('r_kill10');
@@ -492,11 +548,12 @@
   function applyOfflineProgress(save) {
     const d = save.data;
     if (!d.action) return;
-    const elapsed = Math.min((Date.now() - (save.savedAt || Date.now())) / 1000, OFFLINE_CAP);
-    if (elapsed < 60) return;
-    const S0 = S; S = d; // run helpers against the raw save
-    let summary = '';
+    const S0 = S; S = d; // run all helpers against the raw save
+    let summary = '', elapsed = 0;
     try {
+      elapsed = Math.min((Date.now() - (save.savedAt || Date.now())) / 1000, offlineCap());
+      if (elapsed < 60) return;
+      const gxp = globalXpMul();
       if (d.action.type === 'skill') {
         const a = ACTION[d.action.id];
         if (a) {
@@ -510,12 +567,14 @@
             let made = 0, xp = 0;
             for (let i = 0; i < cycles; i++) {
               if (a.inputs) { if (!hasInputs(a.inputs)) break; spendInputs(a.inputs); }
-              if (a.output) { const burn = a.burn && Math.random() < cookBurnChance(a); if (!burn) { bankAdd(a.output, 1); made++; xp += a.xp; } else xp += Math.floor(a.xp * 0.3); }
-              else if (a.item) { bankAdd(a.item, 1); made++; xp += a.xp; rollRareDrops(a, true); }
-              else { xp += a.xp; made++; }
+              const dbl = Math.random() < masteryDouble(a.id);
+              if (a.output) { const burn = a.burn && Math.random() < cookBurnChance(a); if (!burn) { bankAdd(a.output, dbl ? 2 : 1); made++; xp += a.xp; } else xp += Math.floor(a.xp * 0.3); }
+              else if (a.item) { bankAdd(a.item, dbl ? 2 : 1); made++; xp += a.xp; rollRareDrops(a, true); }
+              else { xp += dbl ? Math.round(a.xp * 1.5) : a.xp; made++; }
             }
-            d.skillsXp[a.skill] = (d.skillsXp[a.skill] || 0) + xp;
-            summary = `${SKILL[a.skill].name}: +${Fmt.format(xp)} XP · ${Fmt.format(made)}× ${a.item ? itemName(a.item) : a.output ? itemName(a.output) : 'actions'}`;
+            d.skillsXp[a.skill] = (d.skillsXp[a.skill] || 0) + Math.round(xp * gxp);
+            d.mastery = d.mastery || {}; d.mastery[a.id] = (d.mastery[a.id] || 0) + cycles * a.xp;
+            summary = `${SKILL[a.skill].name}: +${Fmt.format(Math.round(xp * gxp))} XP · ${Fmt.format(made)}× ${a.item ? itemName(a.item) : a.output ? itemName(a.output) : 'actions'}`;
           }
         }
       } else if (d.action.type === 'combat') {
@@ -530,7 +589,7 @@
           const sustainSecs = (maxHp() + foodPool) / Math.max(0.01, dmgPerSec);
           if (sustainSecs < elapsed) kills = Math.min(kills, Math.floor(sustainSecs / ttk));
           if (kills > 0) {
-            const sx = m.xp * kills, hx = Math.round(m.xp * 0.33) * kills;
+            const sx = Math.round(m.xp * kills * gxp), hx = Math.round(m.xp * 0.33 * kills * gxp);
             d.skillsXp[styleSkill()] = (d.skillsXp[styleSkill()] || 0) + sx;
             d.skillsXp.hitpoints = (d.skillsXp.hitpoints || 0) + hx;
             const coins = Math.round((m.coins[0] + m.coins[1]) / 2 * kills);
@@ -568,6 +627,8 @@
     }
     S.bank  = S.bank || { coins: 25 };
     S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null }, S.equip || {});
+    S.mastery = S.mastery || {};
+    S.shop = S.shop || {};
     if (!S.skillsXp) S.skillsXp = defaultState().skillsXp;
     SKILLS.forEach(s => { if (typeof S.skillsXp[s.id] !== 'number') S.skillsXp[s.id] = (s.id === 'hitpoints' ? xpForLevel(10) : 0); });
     progress = 0; cmb = null;
@@ -663,7 +724,8 @@
         </div>
         <div class="progress-bar" style="height:8px;margin-top:4px"><div class="progress-fill" style="width:${b.pct}%;background:var(--accent)"></div></div>
         <div class="progress-bar" style="height:5px;margin-top:4px"><div class="progress-fill green" style="width:${Math.min(100, progress / eff * 100)}%"></div></div>
-        <div style="font-size:12px;color:var(--text2);margin-top:6px">${skillEtaLine(a)}</div>`;
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">${skillEtaLine(a)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">🎯 Mastery Lv.${masteryLevel(a.id)}/${MASTERY_CAP} · ${Math.round(masterySpeed(a.id) * 100)}% faster · ${Math.round(masteryDouble(a.id) * 100)}% double</div>`;
     }
   }
 
@@ -694,6 +756,7 @@
             <div class="upg-info">
               <div class="upg-name">${a.name} ${active ? '<span class="text-accent" style="font-size:11px">● active</span>' : ''}</div>
               <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Lv.${a.lvl}` : `${inputTxt}${outTxt}`}</div>
+              ${!locked && masteryLevel(a.id) > 0 ? `<div style="font-size:11px;color:var(--accent)">🎯 Mastery ${masteryLevel(a.id)}</div>` : ''}
             </div>
             <div style="text-align:right;flex-shrink:0;font-size:12px"><div class="text-green">+${a.xp} xp</div><div style="color:var(--text2)">${a.time.toFixed(1)}s</div></div>
           </button>`;
@@ -785,12 +848,36 @@
     list.innerHTML = html;
   }
 
+  function renderStoreTab() {
+    const list = document.getElementById('rl-content');
+    if (!list || activeTab !== 'store') return;
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
+    html += `<div style="font-size:12px;color:var(--text2)">General Store — spend 🪙 coins (from selling loot & monster kills) on permanent upgrades.</div>`;
+    SHOP.forEach(def => {
+      const lvl = shopLvl(def.id);
+      const maxed = lvl >= def.max;
+      const cost = shopCost(def, lvl);
+      const aff = !maxed && bankCount('coins') >= cost;
+      html += `<button class="upgrade-item ${maxed ? '' : (aff ? 'can-buy' : 'locked')}" ${maxed ? '' : `onclick="IdleRealm_buyShop('${def.id}')"`}>
+          <div class="upg-icon">${def.icon}</div>
+          <div class="upg-info">
+            <div class="upg-name">${def.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}/${def.max}</span></div>
+            <div style="font-size:12px;color:var(--text2)">${def.fmt(Math.max(1, lvl))}${!maxed ? ` <span style="color:var(--green)">→ ${def.fmt(lvl + 1)}</span>` : ''}</div>
+          </div>
+          <div class="text-gold" style="font-size:13px;flex-shrink:0">${maxed ? 'MAX' : '🪙 ' + Fmt.format(cost)}</div>
+        </button>`;
+    });
+    html += '</div>';
+    list.innerHTML = html;
+  }
+
   function renderAll() {
     if (!S) return;
     renderTopbar(); renderActiveHeader();
     if (activeTab === 'skills') renderSkillsTab();
     else if (activeTab === 'combat') renderCombatTab();
     else if (activeTab === 'bank') renderBankTab();
+    else if (activeTab === 'store') renderStoreTab();
     else if (activeTab === 'stats') renderStatsTab();
   }
 
@@ -838,6 +925,7 @@
             <button class="tab-btn" data-tab="skills" style="min-width:72px" onclick="IdleRealm_tab('skills',this)">🛠️ Skills</button>
             <button class="tab-btn" data-tab="combat" style="min-width:72px" onclick="IdleRealm_tab('combat',this)">⚔️ Combat</button>
             <button class="tab-btn" data-tab="bank"   style="min-width:64px" onclick="IdleRealm_tab('bank',this)">🎒 Bank</button>
+            <button class="tab-btn" data-tab="store"  style="min-width:64px" onclick="IdleRealm_tab('store',this)">🛒 Store</button>
             <button class="tab-btn" data-tab="stats"  style="min-width:64px" onclick="IdleRealm_tab('stats',this)">📊 Stats</button>
           </div>
           <div id="rl-content"></div>
