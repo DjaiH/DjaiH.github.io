@@ -211,7 +211,7 @@ const Router = (() => {
   }
 
   function updateMenuMeta() {
-    const games = ['clicker', 'dungeon'];
+    const games = ['clicker', 'dungeon', 'defense'];
     games.forEach(g => {
       const meta = document.getElementById('card-meta-' + g);
       if (!meta) return;
@@ -246,7 +246,7 @@ const Router = (() => {
    SAVE SYSTEM
    ════════════════════════════════════════════════════════════════ */
 const SaveSystem = (() => {
-  const GAMES = ['clicker', 'dungeon'];
+  const GAMES = ['clicker', 'dungeon', 'defense'];
   const MIGRATIONS = {}; // keyed by game id, value = { v1_to_v2: fn, ... }
 
   function registerMigrations(gameId, migrations) {

@@ -25,7 +25,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>Mini Game Hub</title>
-<!-- v5: tech/synergy affordability timers + dungeon loot tuning (affixes, bag, auto-sell tiers) -->
+<!-- v6: split into modular files + new game (Orbital Defense) -->
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -63,6 +63,16 @@
         <div class="game-card-title">Idle Dungeon</div>
         <div class="game-card-desc">Fight, loot, enchant & learn skills. Rebirth into souls and skill trees.</div>
         <div class="game-card-meta" id="card-meta-dungeon">New game</div>
+      </div>
+      <span class="game-card-arrow">›</span>
+    </button>
+
+    <button class="game-card" onclick="Router.go('defense')">
+      <span class="game-card-icon">🛰️</span>
+      <div class="game-card-info">
+        <div class="game-card-title">Orbital Defense</div>
+        <div class="game-card-desc">Hold the line with one turret. Upgrade firepower, level up, branch skill trees & overclock the reactor.</div>
+        <div class="game-card-meta" id="card-meta-defense">New game</div>
       </div>
       <span class="game-card-arrow">›</span>
     </button>
@@ -121,6 +131,7 @@
   <!-- GAME SCREENS (injected by each game module) -->
   <div id="screen-clicker" class="screen"></div>
   <div id="screen-dungeon" class="screen"></div>
+  <div id="screen-defense" class="screen"></div>
 
   <!-- TOAST CONTAINER -->
   <div id="toast-container"></div>
@@ -138,6 +149,7 @@
 <script src="js/core.js"></script>
 <script src="js/game-clicker.js"></script>
 <script src="js/game-dungeon.js"></script>
+<script src="js/game-defense.js"></script>
 <script src="js/sw-register.js"></script>
 </body>
 </html>

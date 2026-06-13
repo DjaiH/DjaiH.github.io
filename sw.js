@@ -4,7 +4,7 @@ const CACHE = 'mini-game-hub-v6';
 const ASSETS = [
   './', './index.html', './manifest.json', './icon.svg',
   './css/styles.css',
-  './js/core.js', './js/game-clicker.js', './js/game-dungeon.js', './js/sw-register.js',
+  './js/core.js', './js/game-clicker.js', './js/game-dungeon.js', './js/game-defense.js', './js/sw-register.js',
 ];
 
 self.addEventListener('install', (e) => {
