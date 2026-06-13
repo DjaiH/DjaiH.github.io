@@ -531,7 +531,42 @@
     const pct = lvl >= MAX_LEVEL ? 100 : Math.max(0, (xp - cur) / (next - cur) * 100);
     return { lvl, pct, xp, next };
   }
+  // Expected XP/sec a skill action yields (accounts for cooking burn)
+  function actionXpRate(a) {
+    let perCycle = a.xp;
+    if (a.output && a.burn) { const bc = cookBurnChance(a); perCycle = a.xp * (1 - bc) + Math.floor(a.xp * 0.3) * bc; }
+    return perCycle / actionEffTime(a);
+  }
+  // Seconds until the next level in `skillId` at the given xp/sec (null if maxed/idle)
+  function etaToLevel(skillId, xpPerSec) {
+    const lvl = skillLevel(skillId);
+    if (lvl >= MAX_LEVEL || xpPerSec <= 0) return null;
+    return (xpForLevel(lvl + 1) - skillXp(skillId)) / xpPerSec;
+  }
+  // The next still-locked action in a skill (for "next unlock" ETA)
+  function nextUnlock(skillId) {
+    const lvl = skillLevel(skillId);
+    return ACTIONS.filter(a => a.skill === skillId && a.lvl > lvl).sort((a, b) => a.lvl - b.lvl)[0] || null;
+  }
+  // Compact ETA line for the active skill action
+  function skillEtaLine(a) {
+    const rate = actionXpRate(a);
+    const tl = etaToLevel(a.skill, rate);
+    let parts = [];
+    parts.push(tl != null ? `⏳ Lv.${skillLevel(a.skill) + 1} in <b>${Fmt.time(tl)}</b>` : '⏳ <b class="text-gold">maxed</b>');
+    const nu = nextUnlock(a.skill);
+    if (nu && rate > 0) parts.push(`🔓 ${nu.name} in <b>${Fmt.time((xpForLevel(nu.lvl) - skillXp(a.skill)) / rate)}</b>`);
+    return parts.join(' · ');
+  }
   function foodCount() { return Object.keys(S.bank).reduce((n, id) => n + ((ITEMS[id] && ITEMS[id].type === 'food') ? bankCount(id) : 0), 0); }
+  // ETA line for combat: time to next level of the trained style skill
+  function combatEtaLine(m) {
+    const kps = playerDps(m) / m.hp;                 // kills per second
+    const tl = etaToLevel(styleSkill(), kps * m.xp);
+    const sk = SKILL[styleSkill()];
+    if (tl == null) return `⏳ ${sk.name} <b class="text-gold">maxed</b> · ~${Fmt.time(1 / kps)}/kill`;
+    return `⏳ ${sk.name} Lv.${skillLevel(styleSkill()) + 1} in <b>${Fmt.time(tl)}</b> · ~${Fmt.time(1 / kps)}/kill`;
+  }
 
   function renderActiveHeader() {
     const el = document.getElementById('rl-active');
@@ -550,7 +585,8 @@
         <div style="font-size:12px;color:var(--text2);text-align:center;margin:4px 0 2px">${m.name} · ${cmb ? Fmt.format(Math.max(0, Math.ceil(cmb.mhp))) : m.hp} / ${m.hp} HP</div>
         <div class="progress-bar"><div class="progress-fill" style="width:${mp}%;background:var(--red)"></div></div>
         <div style="font-size:12px;color:var(--text2);margin:8px 0 2px">❤️ You · ${cmb ? Fmt.format(Math.max(0, Math.ceil(cmb.php))) : maxHp()} / ${maxHp()} HP · 🍖 ${foodCount()} food</div>
-        <div class="progress-bar" style="height:8px"><div class="progress-fill green" style="width:${pp}%"></div></div>`;
+        <div class="progress-bar" style="height:8px"><div class="progress-fill green" style="width:${pp}%"></div></div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">${combatEtaLine(m)}</div>`;
     } else {
       const a = ACTION[S.action.id];
       const eff = actionEffTime(a);
@@ -562,7 +598,8 @@
           <span class="text-green">+${a.xp} xp / ${eff.toFixed(1)}s</span>
         </div>
         <div class="progress-bar" style="height:8px;margin-top:4px"><div class="progress-fill" style="width:${b.pct}%;background:var(--accent)"></div></div>
-        <div class="progress-bar" style="height:5px;margin-top:4px"><div class="progress-fill green" style="width:${Math.min(100, progress / eff * 100)}%"></div></div>`;
+        <div class="progress-bar" style="height:5px;margin-top:4px"><div class="progress-fill green" style="width:${Math.min(100, progress / eff * 100)}%"></div></div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">${skillEtaLine(a)}</div>`;
     }
   }
 
