@@ -23,7 +23,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>Mini Game Hub</title>
-<!-- v3: settings + clicker upgrade timers/help + dungeon depth rework -->
+<!-- v5: tech/synergy affordability timers + dungeon loot tuning (affixes, bag, auto-sell tiers) -->
 <style>
 /* ─── CSS CUSTOM PROPERTIES ───────────────────────────────────── */
 :root {
@@ -1567,9 +1567,10 @@ const SettingsScreen = (() => {
   function renderTechTab() {
     const list = document.getElementById('ck-upgrades-list');
     if (!list) return;
+    const cps = computeCps(S);
     const branches = {};
     TECH.forEach(t => { (branches[t.branch] = branches[t.branch] || []).push(t); });
-    let html = '<div style="padding:4px 2px 8px;font-size:12px;color:var(--text2)">🔬 Research permanent upgrades. Each node needs the one before it.</div>';
+    let html = '<div style="padding:4px 2px 8px;font-size:12px;color:var(--text2)">🔬 Research permanent upgrades. Each node needs the one before it. ⏳ shows time until affordable.</div>';
     Object.keys(branches).forEach(br => {
       html += `<div class="menu-section-title" style="padding:6px 2px 2px">${br}</div>`;
       branches[br].forEach(t => {
@@ -1577,12 +1578,15 @@ const SettingsScreen = (() => {
         const reqMet = t.req.every(r => S.tech[r]);
         const canAfford = S.cookies >= t.cost && reqMet && !owned;
         const locked = owned ? false : (!reqMet || !canAfford);
+        // ⏳ time-until-affordable — only once prerequisites are met
+        const tta = (!owned && reqMet && S.cookies < t.cost && cps > 0)
+          ? `<div style="font-size:11px;color:var(--text2)">⏳ ${Fmt.time((t.cost - S.cookies) / cps)}</div>` : '';
         html += `<button class="upgrade-item ${locked && !owned ? 'locked' : ''}" ${owned ? '' : `onclick="ClickerGame_buyTech('${t.id}')"`} style="${owned ? 'border-color:var(--green)' : ''}">
           <div class="upg-icon">${t.icon}</div>
           <div class="upg-info">
             <div class="upg-name">${t.name} ${owned ? '<span class="text-green" style="font-size:12px">✓</span>' : ''}</div>
             <div style="font-size:12px;color:var(--text2)">${t.desc}</div>
-            ${!owned && !reqMet ? '<div class="ach-hint" style="color:var(--text2)">🔒 Needs prior research</div>' : ''}
+            ${!owned && !reqMet ? '<div class="ach-hint" style="color:var(--text2)">🔒 Needs prior research</div>' : tta}
           </div>
           <div class="upg-cost text-gold" style="flex-shrink:0">${owned ? 'Owned' : '🍪 ' + Fmt.format(t.cost)}</div>
         </button>`;
@@ -1594,6 +1598,7 @@ const SettingsScreen = (() => {
   function renderSynergyTab() {
     const list = document.getElementById('ck-upgrades-list');
     if (!list) return;
+    const cps = computeCps(S);
     let html = '<div style="padding:4px 2px 8px;font-size:12px;color:var(--text2)">✨ Synergies make two building types boost each other based on how many you own.</div>';
     SYNERGIES.forEach(sy => {
       const owned = S.synergies[sy.id];
@@ -1605,7 +1610,7 @@ const SettingsScreen = (() => {
         <div class="upg-info">
           <div class="upg-name">${sy.name} ${owned ? '<span style="color:var(--epic);font-size:12px">✓</span>' : ''}</div>
           <div style="font-size:12px;color:var(--text2)">${sy.desc}</div>
-          ${owned ? `<div style="font-size:12px;color:var(--green)">Active: ${live}</div>` : ''}
+          ${owned ? `<div style="font-size:12px;color:var(--green)">Active: ${live}</div>` : (S.cookies < sy.cost && cps > 0 ? `<div style="font-size:11px;color:var(--text2)">⏳ ${Fmt.time((sy.cost - S.cookies) / cps)}</div>` : '')}
         </div>
         <div class="upg-cost text-gold" style="flex-shrink:0">${owned ? 'Owned' : '🍪 ' + Fmt.format(sy.cost)}</div>
       </button>`;
@@ -2044,7 +2049,10 @@ const SettingsScreen = (() => {
     { name:'Epic',      cls:'epic',   mul:2.1, color:'var(--epic)'   },
     { name:'Legendary', cls:'legend', mul:3.2, color:'var(--gold)'   },
   ];
-  const INV_CAP = 18; // backpack size — overflow auto-sells the weakest item
+  const INV_CAP = 30; // backpack size — overflow auto-sells the weakest item
+  // Auto-sell threshold labels (index = rarity floor that still gets sold + 1)
+  // 0 = off, 1 = sell Common, 2 = sell ≤Rare, 3 = sell ≤Epic
+  const AUTOSELL_LABELS = ['Off', 'Common', '≤ Rare', '≤ Epic'];
 
   /* ── Gear affixes ───────────────────────────────────────────────
         Secondary bonuses that turn loot into build choices. Higher
@@ -2220,6 +2228,7 @@ const SettingsScreen = (() => {
       gear:  { weapon:null, armor:null, ring:null },
       inventory: [],     // backpack of unequipped gear the player curates
       autoEquip: true,   // auto-equip a drop if it scores higher than what's worn
+      autoSellBelow: 0,  // auto-sell new drops with rarity < this (0 = off)
       hp:    null, // current hp — set on enter
       waveStreak:    0,  // waves cleared without dying (drives Bloodlust)
       // ── Gated layers (persist across rebirth) ──
@@ -2420,6 +2429,7 @@ const SettingsScreen = (() => {
     applySoulTracks(S); // recompute repeatable soul bonuses from stored levels
     if (!Array.isArray(S.inventory)) S.inventory = [];
     if (typeof S.autoEquip !== 'boolean') S.autoEquip = true;
+    if (typeof S.autoSellBelow !== 'number') S.autoSellBelow = 0;
     if (S.hp === null || S.hp > heroMaxHp(S)) S.hp = heroMaxHp(S);
     S.savedAt = Date.now();
   }
@@ -2473,9 +2483,22 @@ const SettingsScreen = (() => {
     }
   }
 
+  // Stash a fresh drop: auto-sell it if its rarity is below the chosen
+  // threshold, otherwise file it in the bag for the player to curate.
+  function maybeStash(gear) {
+    if (gear.rarity < (S.autoSellBelow || 0)) {
+      const sell = sellValue(gear);
+      gainGold(sell);
+      Toast.show('💰', 'Auto-sold ' + gear.name, `+${Fmt.format(sell)} gold`);
+      return;
+    }
+    inventoryAdd(gear);
+    Toast.show(gear.icon, 'Loot: ' + gear.name, affixSummary(gear) || 'Sent to your bag', gear.rarity >= 2);
+  }
+
   // Roll & resolve a gear drop. With auto-equip on, a higher-scoring drop is
   // worn immediately (the old piece drops into the bag); otherwise the drop
-  // goes to the bag for you to compare, equip, or sell — so loot has weight.
+  // is stashed (or auto-sold by tier) so loot stays meaningful but tidy.
   function grantGear(quality) {
     const gear = randomGear(S.floor, dropLuck(S), quality);
     if (gear.rarity >= 3) AchievementSystem.unlock('d_legend');
@@ -2487,8 +2510,7 @@ const SettingsScreen = (() => {
       const sub = affixSummary(gear) || `+${gear.value} ${STAT_DEFS[gear.statIdx].name}`;
       Toast.show(gear.icon, gear.name + ' Equipped!', sub, gear.rarity >= 2);
     } else {
-      inventoryAdd(gear);
-      Toast.show(gear.icon, 'Loot: ' + gear.name, affixSummary(gear) || 'Sent to your bag', gear.rarity >= 2);
+      maybeStash(gear);
     }
   }
 
@@ -2537,6 +2559,19 @@ const SettingsScreen = (() => {
     renderGearTab();
   };
 
+  // Cycle the auto-sell tier: Off → Common → ≤Rare → ≤Epic → Off
+  window.DungeonGame_cycleAutoSell = function() {
+    S.autoSellBelow = ((S.autoSellBelow || 0) + 1) % AUTOSELL_LABELS.length;
+    const lvl = S.autoSellBelow;
+    Toast.show('🗑️', 'Auto-sell: ' + AUTOSELL_LABELS[lvl], lvl ? `New ${AUTOSELL_LABELS[lvl]} drops are sold automatically` : 'All drops are kept');
+    renderGearTab();
+  };
+
+  // Roll whether a kill drops gear. base chance + a little from Treasure Hunter.
+  function gearDrops(base) {
+    return Math.random() < Math.min(0.95, base + 0.03 * skillLvl(S, 'k_drop'));
+  }
+
   function onHeroDeath() {
     const reviveFrac = Math.min(0.95, 0.4 + 0.08 * skillLvl(S, 'k_wind'));
     S.hp = heroMaxHp(S) * reviveFrac;
@@ -2555,7 +2590,7 @@ const SettingsScreen = (() => {
     S.kills++;
     S.waveStreak = (S.waveStreak || 0) + 1;
 
-    if (e.isElite) { AchievementSystem.unlock('d_elite'); grantGear(1); }
+    if (e.isElite) { AchievementSystem.unlock('d_elite'); if (gearDrops(0.55)) grantGear(1); }
 
     if (e.isBoss) {
       S.maxFloor = Math.max(S.maxFloor, S.floor);
@@ -2563,7 +2598,9 @@ const SettingsScreen = (() => {
       const essMul  = 1 + 0.20 * skillLvl(S, 'k_ess');
       const essGain = Math.max(1, Math.round(essBase * essMul * (e.isGuard ? 3 : 1)));
       S.essence = (S.essence || 0) + essGain;
-      grantGear(e.isGuard ? 2 : 0);
+      // Guardians always reward gear (milestone); normal bosses drop ~45% of the time
+      if (e.isGuard) grantGear(2);
+      else if (gearDrops(0.45)) grantGear(0);
       if (e.isGuard) {
         const theme = themeFor(S.floor);
         if (!S.keys) S.keys = {};
@@ -2750,6 +2787,7 @@ const SettingsScreen = (() => {
           const gear     = S.gear;
           const inventory = S.inventory;
           const autoEquip = S.autoEquip;
+          const autoSellBelow = S.autoSellBelow;
           const rebirths = S.rebirths + 1;
           const soulMods = { soulDmgMul: S.soulDmgMul, soulGoldMul: S.soulGoldMul, soulHpMul: S.soulHpMul, soulCritBonus: S.soulCritBonus, soulStartFloor: S.soulStartFloor };
           const soulUpgrades = S.soulUpgrades, soulLevels = S.soulLevels;
@@ -2765,6 +2803,7 @@ const SettingsScreen = (() => {
           S.gear        = gear;
           S.inventory   = inventory;
           S.autoEquip   = autoEquip;
+          S.autoSellBelow = autoSellBelow;
           S.rebirths    = rebirths;
           S.souls       = carrySouls;
           S.allTimeSouls = allTimeSouls;
@@ -2812,7 +2851,7 @@ const SettingsScreen = (() => {
         <p>Your hero <b>auto-attacks</b> the monster. <b class="text-gold">Tap the enemy</b> for big bonus hits.</p>
         <p class="mt-8">Each floor has <b>10 waves</b>. Wave 10 is a <b>👑 Boss</b>; clearing it advances a floor and drops gear + 💎 essence. Every 10th floor ends with a tough <b class="text-gold">🛡️ Guardian</b> that drops a rare zone <b>key</b>.</p>
         <p class="mt-8"><b>✨ Elites</b> appear at random — tougher, but far better loot.</p>
-        <p class="mt-8"><b class="text-green">💰 Gold</b> upgrades your stats. <b>Gear</b> drops with <b class="text-accent">affixes</b> (extra bonuses like +Damage, Lifesteal or Crit) — rarer items roll more. Loot lands in your <b>🎒 Bag</b>: compare it, <b>equip</b> what fits your build, or <b>sell</b> the rest. Leave <b>Auto</b> on to auto-equip clear upgrades. <b>💎 Essence</b> enchants gear; matching all three rarities grants a <b>set bonus</b>.</p>
+        <p class="mt-8"><b class="text-green">💰 Gold</b> upgrades your stats. <b>Gear</b> drops with <b class="text-accent">affixes</b> (extra bonuses like +Damage, Lifesteal or Crit) — rarer items roll more. Loot lands in your <b>🎒 Bag</b>: compare it, <b>equip</b> what fits your build, or <b>sell</b> the rest. <b>Auto-equip</b> wears clear upgrades for you, and <b>Auto-sell</b> can discard low-rarity drops automatically. <b>💎 Essence</b> enchants gear; matching all three rarities grants a <b>set bonus</b>.</p>
         <p class="mt-8"><b>⭐ Skills</b> (unlock floor ${UNLOCK_SKILLS}) cost points earned for each new deepest floor — higher tiers need levels in the skill above them.</p>
         <p class="mt-8"><b class="text-accent">🌟 Rebirth</b> at floor ${REBIRTH_FLOOR}+ resets your run (gold, stats, floor) for <b>Souls</b>. The deeper you reached, the more souls you earn. Spend them on repeatable <b>Soul Powers</b> and one-time milestones that make every run stronger. You must climb back up to rebirth again — so souls truly add up over time.</p>
         <p class="mt-8">If you die you drop back a wave and lose your <b>🔥 Bloodlust</b> streak, so keep your HP up.</p>
@@ -2992,10 +3031,12 @@ const SettingsScreen = (() => {
 
     // ── Backpack: curate your loot ──────────────────────────────
     const inv = S.inventory || [];
-    html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 2px 0">
+    const asLvl = S.autoSellBelow || 0;
+    html += `<div style="padding:8px 2px 0">
         <span class="menu-section-title" style="padding:0">🎒 Bag <span style="color:var(--text2);font-weight:400">${inv.length}/${INV_CAP}</span></span>
-        <div style="display:flex;gap:6px;align-items:center">
-          <button class="buy-amt-btn ${S.autoEquip?'active':''}" onclick="DungeonGame_toggleAutoEquip()" title="Auto-equip upgrades">⚙️ Auto ${S.autoEquip?'ON':'OFF'}</button>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
+          <button class="buy-amt-btn ${S.autoEquip?'active':''}" onclick="DungeonGame_toggleAutoEquip()" title="Auto-equip upgrades">⚙️ Auto-equip ${S.autoEquip?'ON':'OFF'}</button>
+          <button class="buy-amt-btn ${asLvl?'active':''}" onclick="DungeonGame_cycleAutoSell()" title="Auto-sell new drops at or below this rarity">🗑️ Auto-sell: ${AUTOSELL_LABELS[asLvl]}</button>
           ${inv.length ? `<button class="buy-amt-btn" onclick="DungeonGame_sellJunk()">💰 Sell extras</button>` : ''}
         </div>
       </div>`;
