@@ -1,6 +1,6 @@
 # Mini Game Hub
 
-Offline idle games (Cookie Clicker, Idle Dungeon, and Orbital Defense) in one web app. Plays in any mobile browser, installs to the home screen, and works offline. Progress saves automatically in the browser.
+Offline idle games (Cookie Clicker and Idle Realm — a Melvor/RuneScape-style idle skiller) in one web app. Plays in any mobile browser, installs to the home screen, and works offline. Progress saves automatically in the browser.
 
 ## Project layout
 
@@ -9,7 +9,7 @@ It's a static, buildless site — plain `<script>` tags, no bundler, no dependen
 - `index.html` — markup + script/style links
 - `css/styles.css` — shared styles
 - `js/core.js` — shared engine (number formatting, save system, router, modal/toast, ticker, achievements, settings)
-- `js/game-clicker.js`, `js/game-dungeon.js`, `js/game-defense.js` — one module per game
+- `js/game-clicker.js`, `js/game-dungeon.js` — one module per game (`game-dungeon.js` is Idle Realm)
 - `js/sw-register.js` — service-worker registration
 - `sw.js` — offline cache (bump `CACHE` when files change)
 

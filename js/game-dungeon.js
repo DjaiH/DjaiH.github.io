@@ -1,1346 +1,949 @@
 'use strict';
 /* ════════════════════════════════════════════════════════════════
-   IDLE DUNGEON GAME
+   IDLE REALM  —  a Melvor/RuneScape-style idle skiller
+   ────────────────────────────────────────────────────────────────
+   One action at a time: fight, or chop / fish / mine, or fire / cook /
+   smith. Ten skills level on the classic RS XP curve to 99. Gathering
+   feeds production, production feeds combat (gear) and sustain (food),
+   and skill levels passively buff one another. Slow on purpose — a
+   long-haul grind with rare drops. The active action runs while idle.
+   (Game id stays 'dungeon'; old Idle Dungeon saves are wiped on load.)
    ════════════════════════════════════════════════════════════════ */
-(function DungeonGame() {
+(function IdleRealm() {
   const GAME_ID      = 'dungeon';
-  const SAVE_VERSION = 1;
+  const SAVE_VERSION = 2;
   const AUTOSAVE_MS  = 30000;
   const OFFLINE_CAP  = 24 * 3600;
+  const PATK_INT     = 2.4;   // player attack interval (seconds)
 
-  /* ── Zone definitions (one zone = 10 floors). hpMod/atkMod give
-        each zone a distinct feel; key is the guaranteed trophy that
-        drops from that zone's Guardian (the floor-10/20/... boss). ── */
-  const FLOOR_THEMES = [
-    { name:'Whispering Forest', enemies:['🐺','🦊','🐗','🐻','🦌','🦅','🐝'], boss:'🐲', guardian:'🦁', key:'🍃', keyName:'Sylvan Sigil',  tip:'Beasts hunt in packs — steady damage wins.', hpMod:1.00, atkMod:1.00 },
-    { name:'Hollow Caves',      enemies:['🦇','🕷️','🦂','🐍','🦎','🪲','🐛'], boss:'👹', guardian:'🦖', key:'💎', keyName:'Cave Heart',    tip:'Thick hides soak hits — invest in Attack.',  hpMod:1.25, atkMod:0.95 },
-    { name:'Sunken Marsh',      enemies:['🐸','🦟','🐊','🪱','🐢','🦠'],       boss:'🐙', guardian:'🐊', key:'🫧', keyName:'Bog Pearl',     tip:'Venom stings — keep your HP high.',          hpMod:1.05, atkMod:1.30 },
-    { name:'Cursed Castle',     enemies:['💀','🧟','👻','🧛','⚔️','🗡️','🛡️'], boss:'🧙', guardian:'👑', key:'🗝️', keyName:'Royal Seal',    tip:'The restless dead never tire.',              hpMod:1.35, atkMod:1.15 },
-    { name:'Frozen Peaks',      enemies:['🐻‍❄️','🦣','🐧','🦭','🦅','🌬️'],     boss:'🦬', guardian:'🐻‍❄️', key:'❄️', keyName:'Frost Core',    tip:'The cold punishes the under-geared.',        hpMod:1.50, atkMod:1.20 },
-    { name:'Molten Volcano',    enemies:['🔥','🌋','💥','🐉','😈','🦂'],       boss:'👺', guardian:'🐲', key:'🔥', keyName:'Ember Crown',   tip:'Everything hits harder in the heat.',        hpMod:1.40, atkMod:1.55 },
-    { name:'Astral Void',       enemies:['🌑','⬛','🌀','👁️','🛸','☄️'],       boss:'🪐', guardian:'👾', key:'🌌', keyName:'Void Shard',    tip:'Reality bends — only power matters.',        hpMod:1.85, atkMod:1.55 },
-    { name:'The Abyss',         enemies:['🕳️','👁️','🐙','🦑','🌫️','💀'],     boss:'🐉', guardian:'😱', key:'💀', keyName:'Abyssal Idol',  tip:'Only the strongest descend this far.',       hpMod:2.30, atkMod:1.90 },
-  ];
-  function zoneIndex(floor) { return Math.floor((floor - 1) / 10); }
-  function themeFor(floor)  { return FLOOR_THEMES[zoneIndex(floor) % FLOOR_THEMES.length]; }
-  // A Guardian stands on the last floor of each zone (floor 10, 20, 30 …)
-  function isGuardianFloor(floor) { return floor % 10 === 0; }
+  /* ── XP curve (RuneScape formula), capped at level 99 ─────────── */
+  const MAX_LEVEL = 99;
+  const XP_TABLE = (() => {
+    const t = [0, 0]; let pts = 0;
+    for (let l = 1; l < MAX_LEVEL; l++) { pts += Math.floor(l + 300 * Math.pow(2, l / 7)); t[l + 1] = Math.floor(pts / 4); }
+    return t; // t[level] = total xp required to BE that level
+  })();
+  function levelForXp(xp) { let L = 1; while (L < MAX_LEVEL && xp >= XP_TABLE[L + 1]) L++; return L; }
+  function xpForLevel(L) { return XP_TABLE[Math.min(MAX_LEVEL, L)] || 0; }
 
-  /* ── Stat upgrade costs ─────────────────────────────────────── */
-  const STAT_DEFS = [
-    { id:'atk',  name:'Attack',       icon:'⚔️',  base:10,  costBase:50,  costMul:1.15 },
-    { id:'hp',   name:'Max HP',       icon:'❤️',  base:100, costBase:80,  costMul:1.12 },
-    { id:'crit', name:'Crit Chance',  icon:'💥',  base:0,   costBase:200, costMul:1.20, max:50 },
-    { id:'crit2',name:'Crit Damage',  icon:'🎯',  base:150, costBase:150, costMul:1.18, isPercent:true },
-    { id:'spd',  name:'Attack Speed', icon:'⚡',  base:1,   costBase:300, costMul:1.22, max:5 },
-  ];
-
-  /* ── Soul upgrades (post-rebirth) ────────────────────────────
-        One-time milestones plus three repeatable tracks so souls
-        always have somewhere to go, run after run. ───────────────── */
-  const SOUL_UPGRADES = [
-    // One-time milestone unlocks
-    { id:'su3', name:'Quick Start',    icon:'🚀', cost:3,  desc:'Start each rebirth at floor 5',  apply: s => s.soulStartFloor = Math.max(s.soulStartFloor||0, 5) },
-    { id:'su5', name:'Lucky Strikes',  icon:'🍀', cost:4,  desc:'+10% Crit Chance permanently',   apply: s => s.soulCritBonus = (s.soulCritBonus||0) + 10 },
-    { id:'su7', name:'Dungeon Master', icon:'👑', cost:12, desc:'Start each rebirth at floor 15', apply: s => s.soulStartFloor = Math.max(s.soulStartFloor||0, 15) },
-    { id:'su8', name:'Soul Anchor',    icon:'⚓', cost:20, desc:'Start each rebirth at floor 30', apply: s => s.soulStartFloor = Math.max(s.soulStartFloor||0, 30) },
-  ];
-  // Repeatable soul tracks: cost rises with each level so souls keep mattering
-  const SOUL_TRACKS = [
-    { id:'st_dmg',  name:'Soul Forge',   icon:'⚔️', base:2, inc:1, per:0.08, fmt:l=>`+${l*8}% Damage (×${(1+l*0.08).toFixed(2)})`,  apply:(s,l)=> s.soulDmgMul  = l*0.08 },
-    { id:'st_hp',   name:'Soul Ward',    icon:'🛡️', base:2, inc:1, per:0.10, fmt:l=>`+${l*10}% Max HP (×${(1+l*0.10).toFixed(2)})`, apply:(s,l)=> s.soulHpMul   = l*0.10 },
-    { id:'st_gold', name:'Soul Greed',   icon:'💰', base:2, inc:1, per:0.15, fmt:l=>`+${l*15}% Gold (×${(1+l*0.15).toFixed(2)})`,   apply:(s,l)=> s.soulGoldMul = l*0.15 },
-  ];
-  function soulTrackLvl(state, id) { return (state.soulLevels && state.soulLevels[id]) || 0; }
-  function soulTrackCost(track, lvl) { return track.base + track.inc * lvl; }
-  // Re-apply all repeatable soul track bonuses from stored levels (call on load)
-  function applySoulTracks(state) {
-    if (!state.soulLevels) state.soulLevels = {};
-    SOUL_TRACKS.forEach(t => t.apply(state, soulTrackLvl(state, t.id)));
-  }
-
-  /* ── Gear ───────────────────────────────────────────────────── */
-  const GEAR_SLOTS  = ['weapon','armor','ring'];
-  const GEAR_RARITY = [
-    { name:'Common',    cls:'',       mul:1.0, color:'var(--common)' },
-    { name:'Rare',      cls:'rare',   mul:1.45, color:'var(--rare)'   },
-    { name:'Epic',      cls:'epic',   mul:2.1, color:'var(--epic)'   },
-    { name:'Legendary', cls:'legend', mul:3.2, color:'var(--gold)'   },
-  ];
-  const INV_CAP = 30; // backpack size — overflow auto-sells the weakest item
-  // Auto-sell threshold labels (index = rarity floor that still gets sold + 1)
-  // 0 = off, 1 = sell Common, 2 = sell ≤Rare, 3 = sell ≤Epic
-  const AUTOSELL_LABELS = ['Off', 'Common', '≤ Rare', '≤ Epic'];
-
-  /* ── Gear affixes ───────────────────────────────────────────────
-        Secondary bonuses that turn loot into build choices. Higher
-        rarities roll more (and stronger) affixes, so a Legendary with
-        the right affixes can beat a higher-base Epic for your build.
-        Values are flat numbers interpreted per-kind in gearAffixTotals. */
-  const GEAR_AFFIXES = [
-    { id:'dmg',  name:'of Power',     icon:'⚔️', fmt:v=>`+${v}% Damage` },
-    { id:'hp',   name:'of Vigor',     icon:'❤️', fmt:v=>`+${v}% Max HP` },
-    { id:'crit', name:'of Precision', icon:'💥', fmt:v=>`+${v}% Crit Chance` },
-    { id:'critd',name:'of Savagery',  icon:'🎯', fmt:v=>`+${v}% Crit Damage` },
-    { id:'gold', name:'of Fortune',   icon:'💰', fmt:v=>`+${v}% Gold` },
-    { id:'life', name:'of Leeching',  icon:'🩸', fmt:v=>`+${v}% Lifesteal` },
-    { id:'spd',  name:'of Swiftness', icon:'⚡', fmt:v=>`+${(v/100).toFixed(2)} Atk Speed` },
-  ];
-  const AFFIX_COUNT = [0, 1, 2, 3]; // by rarity index: Common,Rare,Epic,Legendary
-  function affixDef(id) { return GEAR_AFFIXES.find(a => a.id === id); }
-  function affixText(a) { const d = affixDef(a.id); return d ? d.fmt(a.val) : ''; }
-  function affixSummary(g) {
-    if (!g || !g.affixes || !g.affixes.length) return '';
-    return g.affixes.map(affixText).join(' · ');
-  }
-  // Roll a single affix magnitude for the given rarity & kind
-  function affixRoll(id, rarIdx) {
-    const range = { 1:[4,8], 2:[7,12], 3:[10,18] }[rarIdx] || [3,5];
-    let v = range[0] + Math.floor(Math.random() * (range[1] - range[0] + 1));
-    if (id === 'spd')  v = Math.max(3, Math.round(v * 0.7));  // attack speed stays modest (v/100)
-    if (id === 'crit') v = Math.max(2, Math.round(v * 0.6));  // crit-chance points stay modest
-    return v;
-  }
-  function rollAffixes(rarIdx) {
-    const n = AFFIX_COUNT[rarIdx] || 0;
-    if (!n) return [];
-    const pool = GEAR_AFFIXES.slice();
-    const out = [];
-    for (let i = 0; i < n && pool.length; i++) {
-      const d = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
-      out.push({ id: d.id, val: affixRoll(d.id, rarIdx) });
-    }
-    return out;
-  }
-  // Sum all affix bonuses across the three equipped slots
-  function gearAffixTotals(state) {
-    const t = { dmg:0, hp:0, crit:0, critd:0, gold:0, life:0, spd:0 };
-    GEAR_SLOTS.forEach(slot => {
-      const g = state.gear[slot];
-      if (!g || !g.affixes) return;
-      g.affixes.forEach(a => { if (t[a.id] !== undefined) t[a.id] += a.val; });
-    });
-    return t;
-  }
-  // Rough power rating used for auto-equip + ▲/▼ compare arrows
-  function gearScore(g) {
-    if (!g) return 0;
-    let s = g.value * (1 + g.rarity * 0.18);
-    if (g.affixes) g.affixes.forEach(a => { s += a.val * 1.6; });
-    return s;
-  }
-  function sellValue(g) { return Math.floor(g.value * 3 * (g.rarity + 1)); }
-
-  /* ── Skill tree (skill points, prereq-gated) ───────────────── */
-  const UNLOCK_SKILLS = 10; // max floor reached to unlock the skill tree
+  /* ── Skills ──────────────────────────────────────────────────── */
   const SKILLS = [
-    // Might — offense
-    { id:'k_atk1',  branch:'Might',    name:'Sharpen',          icon:'⚔️', max:10, cost:1, req:null,     reqLvl:0, desc:l=>`+${l*5}% Attack` },
-    { id:'k_multi', branch:'Might',    name:'Multi-Strike',     icon:'🗡️', max:5,  cost:2, req:'k_atk1', reqLvl:3, desc:l=>`${l*5}% chance to hit twice` },
-    { id:'k_exec',  branch:'Might',    name:'Executioner',      icon:'☠️', max:5,  cost:3, req:'k_multi',reqLvl:1, desc:l=>`+${l*8}% damage vs bosses & elites` },
-    { id:'k_cleave',branch:'Might',    name:'Power Tap',        icon:'🪓', max:5,  cost:4, req:'k_exec', reqLvl:1, desc:l=>`Taps deal +${l*40}% damage` },
-    // Vitality — survival
-    { id:'k_hp1',   branch:'Vitality', name:'Toughness',        icon:'❤️', max:10, cost:1, req:null,     reqLvl:0, desc:l=>`+${l*6}% Max HP` },
-    { id:'k_life',  branch:'Vitality', name:'Lifesteal',        icon:'🩸', max:5,  cost:2, req:'k_hp1',  reqLvl:3, desc:l=>`Heal ${l*2}% of damage dealt` },
-    { id:'k_regen', branch:'Vitality', name:'Regeneration',     icon:'💚', max:5,  cost:3, req:'k_life', reqLvl:1, desc:l=>`Regen ${l*1.5}%/s of Max HP` },
-    { id:'k_wind',  branch:'Vitality', name:'Second Wind',      icon:'🌬️', max:5,  cost:4, req:'k_regen',reqLvl:1, desc:l=>`Revive at +${l*8}% HP after dying` },
-    // Fortune — rewards
-    { id:'k_gold1', branch:'Fortune',  name:'Greed',            icon:'💰', max:10, cost:1, req:null,     reqLvl:0, desc:l=>`+${l*8}% Gold` },
-    { id:'k_crit',  branch:'Fortune',  name:'Deadeye',          icon:'🎯', max:8,  cost:2, req:'k_gold1',reqLvl:3, desc:l=>`+${l*3}% Crit Chance` },
-    { id:'k_drop',  branch:'Fortune',  name:'Treasure Hunter',  icon:'💎', max:5,  cost:3, req:'k_crit', reqLvl:1, desc:l=>`+${l*4}% chance for rare+ gear` },
-    { id:'k_ess',   branch:'Fortune',  name:'Soul Siphon',      icon:'🔮', max:5,  cost:4, req:'k_drop', reqLvl:1, desc:l=>`+${l*20}% Essence from bosses` },
-    // Arcane — tempo
-    { id:'k_focus', branch:'Arcane',   name:'Focus',            icon:'🧿', max:8,  cost:2, req:null,     reqLvl:0, desc:l=>`+${l*8}% Crit Damage` },
-    { id:'k_haste', branch:'Arcane',   name:'Haste',            icon:'⚡', max:5,  cost:3, req:'k_focus',reqLvl:2, desc:l=>`+${(l*0.15).toFixed(2)} Attack Speed` },
-    { id:'k_momentum',branch:'Arcane', name:'Bloodlust',        icon:'🔥', max:5,  cost:5, req:'k_haste',reqLvl:1, desc:l=>`+${l*3}% damage per wave cleared (caps ${l*30}%)` },
+    { id:'attack',     name:'Attack',     icon:'⚔️', kind:'combat' },
+    { id:'strength',   name:'Strength',   icon:'💪', kind:'combat' },
+    { id:'defence',    name:'Defence',    icon:'🛡️', kind:'combat' },
+    { id:'hitpoints',  name:'Hitpoints',  icon:'❤️', kind:'combat' },
+    { id:'woodcutting',name:'Woodcutting',icon:'🪓', kind:'gather' },
+    { id:'fishing',    name:'Fishing',    icon:'🎣', kind:'gather' },
+    { id:'mining',     name:'Mining',     icon:'⛏️', kind:'gather' },
+    { id:'firemaking', name:'Firemaking', icon:'🔥', kind:'produce' },
+    { id:'cooking',    name:'Cooking',    icon:'🍳', kind:'produce' },
+    { id:'smithing',   name:'Smithing',   icon:'🔨', kind:'produce' },
   ];
-  function skillLvl(state, id) { return (state.skills && state.skills[id]) || 0; }
+  const SKILL = Object.fromEntries(SKILLS.map(s => [s.id, s]));
 
-  /* Gear set synergy: matching rarity across all 3 slots */
-  function gearSetBonus(state) {
-    const g = state.gear;
-    if (!g.weapon || !g.armor || !g.ring) return 1;
-    const minRar = Math.min(g.weapon.rarity, g.armor.rarity, g.ring.rarity);
-    if (minRar >= 3) return 1.60; // all Legendary
-    if (minRar >= 2) return 1.35; // all Epic
-    if (minRar >= 1) return 1.15; // all Rare+
-    return 1;
-  }
-  /* Enchant multiplier for a gear slot: +8% per enchant level */
-  function enchantMul(state, slot) { return 1 + 0.08 * ((state.enchant && state.enchant[slot]) || 0); }
+  /* ── Items ───────────────────────────────────────────────────── */
+  const ITEMS = {
+    coins:       { name:'Coins',          icon:'🪙', type:'currency' },
+    // logs
+    log_normal:  { name:'Logs',           icon:'🪵', type:'log',  value:2 },
+    log_oak:     { name:'Oak Logs',       icon:'🪵', type:'log',  value:6 },
+    log_willow:  { name:'Willow Logs',    icon:'🪵', type:'log',  value:14 },
+    log_maple:   { name:'Maple Logs',     icon:'🪵', type:'log',  value:28 },
+    // raw fish
+    fish_shrimp: { name:'Raw Shrimp',     icon:'🦐', type:'raw',  value:2 },
+    fish_trout:  { name:'Raw Trout',      icon:'🐟', type:'raw',  value:6 },
+    fish_salmon: { name:'Raw Salmon',     icon:'🐟', type:'raw',  value:14 },
+    fish_lobster:{ name:'Raw Lobster',    icon:'🦞', type:'raw',  value:30 },
+    fish_sword:  { name:'Raw Swordfish',  icon:'🐠', type:'raw',  value:55 },
+    // cooked food (heal in combat)
+    food_shrimp: { name:'Shrimp',         icon:'🦐', type:'food', heal:30,  value:4 },
+    food_trout:  { name:'Trout',          icon:'🐟', type:'food', heal:70,  value:10 },
+    food_salmon: { name:'Salmon',         icon:'🐟', type:'food', heal:120, value:22 },
+    food_lobster:{ name:'Lobster',        icon:'🦞', type:'food', heal:180, value:45 },
+    food_sword:  { name:'Swordfish',      icon:'🐠', type:'food', heal:260, value:80 },
+    // ores
+    ore_copper:  { name:'Copper Ore',     icon:'🟤', type:'ore',  value:3 },
+    ore_tin:     { name:'Tin Ore',        icon:'⚪', type:'ore',  value:3 },
+    ore_iron:    { name:'Iron Ore',       icon:'🔴', type:'ore',  value:10 },
+    ore_coal:    { name:'Coal',           icon:'⚫', type:'ore',  value:16 },
+    ore_mithril: { name:'Mithril Ore',    icon:'🔵', type:'ore',  value:48 },
+    // bars
+    bar_bronze:  { name:'Bronze Bar',     icon:'🟫', type:'bar',  value:8 },
+    bar_iron:    { name:'Iron Bar',       icon:'⬜', type:'bar',  value:24 },
+    bar_steel:   { name:'Steel Bar',      icon:'◻️', type:'bar',  value:60 },
+    bar_mithril: { name:'Mithril Bar',    icon:'🟦', type:'bar',  value:160 },
+    // gear (slot weapon/armor/tool)
+    weapon_bronze: { name:'Bronze Sword',     icon:'🗡️', type:'gear', slot:'weapon', tier:1, acc:6,  str:6,  value:40 },
+    weapon_iron:   { name:'Iron Sword',       icon:'🗡️', type:'gear', slot:'weapon', tier:2, acc:12, str:11, value:120 },
+    weapon_steel:  { name:'Steel Sword',      icon:'⚔️', type:'gear', slot:'weapon', tier:3, acc:22, str:20, value:340 },
+    weapon_mithril:{ name:'Mithril Sword',    icon:'⚔️', type:'gear', slot:'weapon', tier:4, acc:38, str:34, value:900 },
+    armor_bronze:  { name:'Bronze Platebody', icon:'🛡️', type:'gear', slot:'armor',  tier:1, def:10, value:50 },
+    armor_iron:    { name:'Iron Platebody',   icon:'🛡️', type:'gear', slot:'armor',  tier:2, def:20, value:150 },
+    armor_steel:   { name:'Steel Platebody',  icon:'🛡️', type:'gear', slot:'armor',  tier:3, def:36, value:420 },
+    armor_mithril: { name:'Mithril Platebody',icon:'🛡️', type:'gear', slot:'armor',  tier:4, def:60, value:1100 },
+    tool_bronze:   { name:'Bronze Toolkit',   icon:'🛠️', type:'gear', slot:'tool',   tier:1, speed:0.08, value:60 },
+    tool_iron:     { name:'Iron Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:2, speed:0.16, value:180 },
+    tool_steel:    { name:'Steel Toolkit',    icon:'🛠️', type:'gear', slot:'tool',   tier:3, speed:0.26, value:480 },
+    tool_mithril:  { name:'Mithril Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:4, speed:0.40, value:1300 },
+    // uncut gems — rare gathering drops
+    usapphire:   { name:'Uncut Sapphire', icon:'🔹', type:'uncut', value:60 },
+    uemerald:    { name:'Uncut Emerald',  icon:'🟢', type:'uncut', value:120 },
+    uruby:       { name:'Uncut Ruby',     icon:'🔻', type:'uncut', value:240 },
+    udiamond:    { name:'Uncut Diamond',  icon:'🔸', type:'uncut', value:600 },
+    gem_dragon:  { name:'Dragonstone',    icon:'💎', type:'uncut', value:5000 }, // rare combat drop
+    // cut gems
+    sapphire:    { name:'Sapphire', icon:'🔹', type:'gem', value:140 },
+    emerald:     { name:'Emerald',  icon:'🟢', type:'gem', value:280 },
+    ruby:        { name:'Ruby',     icon:'🔻', type:'gem', value:560 },
+    diamond:     { name:'Diamond',  icon:'🔸', type:'gem', value:1400 },
+    // amulets (equip slot 'amulet') — build choices, equipped manually
+    amulet_sapphire:{ name:'Amulet of Accuracy', icon:'📿', type:'gear', slot:'amulet', tier:1, acc:12,            value:400 },
+    amulet_ruby:    { name:'Amulet of Power',    icon:'📿', type:'gear', slot:'amulet', tier:2, str:14,            value:900 },
+    amulet_emerald: { name:'Amulet of Foraging', icon:'📿', type:'gear', slot:'amulet', tier:2, gspeed:0.15, rare:0.5, value:900 },
+    amulet_diamond: { name:'Amulet of Skill',    icon:'📿', type:'gear', slot:'amulet', tier:3, acc:12, str:12, rare:0.3, value:2400 },
+    amulet_glory:   { name:'Amulet of Glory',    icon:'🏵️', type:'gear', slot:'amulet', tier:4, acc:22, str:22, rare:0.6, value:8000 },
+  };
+  function itemName(id) { return (ITEMS[id] || {}).name || id; }
+  function itemIcon(id) { return (ITEMS[id] || {}).icon || '❔'; }
 
-  // quality: 0 = normal boss, 1 = elite, 2 = guardian (better rarity odds)
-  function randomGear(floor, luck, quality) {
-    luck = luck || 0;
-    quality = quality || 0;
-    const slot   = GEAR_SLOTS[Math.floor(Math.random() * GEAR_SLOTS.length)];
-    // Rarity roll, improved by Treasure Hunter (luck) and monster quality
-    const qBonus = quality * 0.12;
-    const r = Math.random();
-    let rarIdx;
-    if (r < 0.03 + luck * 0.5 + qBonus)      rarIdx = 3; // Legendary
-    else if (r < 0.15 + luck + qBonus * 1.5) rarIdx = 2; // Epic
-    else if (r < 0.45 + luck * 1.5)          rarIdx = 1; // Rare
-    else                                     rarIdx = 0; // Common
-    const rar    = GEAR_RARITY[rarIdx];
-    const icons  = { weapon:['⚔️','🗡️','🪓','🔱','🏹'], armor:['🛡️','🧥','⛓️','🪬','💠'], ring:['💍','🔮','📿','🌀','🔑'] };
-    const icon   = icons[slot][Math.floor(Math.random() * 5)];
-    const base   = 6 + Math.floor(Math.pow(floor, 1.35) * 1.4);
-    const statIdx = slot === 'weapon' ? 0 : slot === 'armor' ? 1 : Math.floor(Math.random() * 3);
-    const value   = Math.floor(base * rar.mul * (0.85 + Math.random() * 0.35));
-    const affixes = rollAffixes(rarIdx);
-    let name = rar.name + ' ' + (slot.charAt(0).toUpperCase()+slot.slice(1));
-    if (affixes.length) name += ' ' + affixDef(affixes[0].id).name; // e.g. "Epic Weapon of Power"
-    return { slot, icon, rarity: rarIdx, name, statIdx, value, affixes };
-  }
+  /* ── Skill actions (gathering + production) ─────────────────────
+        type gather  → produces 1 item every `time` s
+        type produce → consumes `inputs`, makes `output` (cooking can burn) */
+  const ACTIONS = [
+    // Woodcutting
+    { id:'wc_normal', skill:'woodcutting', name:'Normal Tree', icon:'🌳', lvl:1,  xp:8,  time:3.0, item:'log_normal' },
+    { id:'wc_oak',    skill:'woodcutting', name:'Oak Tree',    icon:'🌳', lvl:15, xp:16, time:3.6, item:'log_oak' },
+    { id:'wc_willow', skill:'woodcutting', name:'Willow Tree', icon:'🌳', lvl:30, xp:32, time:4.2, item:'log_willow' },
+    { id:'wc_maple',  skill:'woodcutting', name:'Maple Tree',  icon:'🌳', lvl:45, xp:55, time:5.0, item:'log_maple' },
+    // Fishing
+    { id:'fs_shrimp', skill:'fishing', name:'Net Shrimp',   icon:'🦐', lvl:1,  xp:7,  time:3.0, item:'fish_shrimp' },
+    { id:'fs_trout',  skill:'fishing', name:'Fly Trout',    icon:'🐟', lvl:15, xp:18, time:3.6, item:'fish_trout' },
+    { id:'fs_salmon', skill:'fishing', name:'Fly Salmon',   icon:'🐟', lvl:30, xp:35, time:4.2, item:'fish_salmon' },
+    { id:'fs_lobster',skill:'fishing', name:'Cage Lobster', icon:'🦞', lvl:45, xp:60, time:5.0, item:'fish_lobster' },
+    { id:'fs_sword',  skill:'fishing', name:'Harpoon Swordfish', icon:'🐠', lvl:60, xp:90, time:5.6, item:'fish_sword' },
+    // Mining
+    { id:'mn_copper', skill:'mining', name:'Copper Vein', icon:'🟤', lvl:1,  xp:8,  time:3.0, item:'ore_copper' },
+    { id:'mn_tin',    skill:'mining', name:'Tin Vein',    icon:'⚪', lvl:1,  xp:8,  time:3.0, item:'ore_tin' },
+    { id:'mn_iron',   skill:'mining', name:'Iron Vein',   icon:'🔴', lvl:15, xp:18, time:3.6, item:'ore_iron' },
+    { id:'mn_coal',   skill:'mining', name:'Coal Seam',   icon:'⚫', lvl:30, xp:30, time:4.2, item:'ore_coal' },
+    { id:'mn_mithril',skill:'mining', name:'Mithril Vein',icon:'🔵', lvl:50, xp:70, time:5.4, item:'ore_mithril' },
+    // Firemaking (burns logs for XP)
+    { id:'fm_normal', skill:'firemaking', name:'Burn Logs',        icon:'🔥', lvl:1,  xp:12, time:2.2, inputs:{ log_normal:1 } },
+    { id:'fm_oak',    skill:'firemaking', name:'Burn Oak Logs',    icon:'🔥', lvl:15, xp:24, time:2.6, inputs:{ log_oak:1 } },
+    { id:'fm_willow', skill:'firemaking', name:'Burn Willow Logs', icon:'🔥', lvl:30, xp:45, time:3.0, inputs:{ log_willow:1 } },
+    { id:'fm_maple',  skill:'firemaking', name:'Burn Maple Logs',  icon:'🔥', lvl:45, xp:75, time:3.4, inputs:{ log_maple:1 } },
+    // Cooking (raw → food, can burn)
+    { id:'ck_shrimp', skill:'cooking', name:'Cook Shrimp',    icon:'🦐', lvl:1,  xp:10, time:2.2, inputs:{ fish_shrimp:1 },  output:'food_shrimp',  burn:0.30 },
+    { id:'ck_trout',  skill:'cooking', name:'Cook Trout',     icon:'🐟', lvl:15, xp:22, time:2.6, inputs:{ fish_trout:1 },   output:'food_trout',   burn:0.28 },
+    { id:'ck_salmon', skill:'cooking', name:'Cook Salmon',    icon:'🐟', lvl:30, xp:40, time:3.0, inputs:{ fish_salmon:1 },  output:'food_salmon',  burn:0.26 },
+    { id:'ck_lobster',skill:'cooking', name:'Cook Lobster',   icon:'🦞', lvl:45, xp:65, time:3.4, inputs:{ fish_lobster:1 }, output:'food_lobster', burn:0.24 },
+    { id:'ck_sword',  skill:'cooking', name:'Cook Swordfish', icon:'🐠', lvl:60, xp:95, time:3.8, inputs:{ fish_sword:1 },   output:'food_sword',   burn:0.22 },
+    // Smithing — smelt bars
+    { id:'sm_bronze', skill:'smithing', name:'Smelt Bronze', icon:'🟫', lvl:1,  xp:10, time:3.0, inputs:{ ore_copper:1, ore_tin:1 }, output:'bar_bronze' },
+    { id:'sm_iron',   skill:'smithing', name:'Smelt Iron',   icon:'⬜', lvl:15, xp:20, time:3.4, inputs:{ ore_iron:1 },             output:'bar_iron' },
+    { id:'sm_steel',  skill:'smithing', name:'Smelt Steel',  icon:'◻️', lvl:30, xp:35, time:3.8, inputs:{ ore_iron:1, ore_coal:2 }, output:'bar_steel' },
+    { id:'sm_mithril',skill:'smithing', name:'Smelt Mithril',icon:'🟦', lvl:50, xp:70, time:4.6, inputs:{ ore_mithril:1, ore_coal:4 }, output:'bar_mithril' },
+    // Smithing — forge gear
+    { id:'fg_weapon_bronze', skill:'smithing', name:'Forge Bronze Sword',    icon:'🗡️', lvl:4,  xp:25,  time:4.0, inputs:{ bar_bronze:1 },  output:'weapon_bronze' },
+    { id:'fg_tool_bronze',   skill:'smithing', name:'Forge Bronze Toolkit',  icon:'🛠️', lvl:6,  xp:40,  time:4.0, inputs:{ bar_bronze:2 },  output:'tool_bronze' },
+    { id:'fg_armor_bronze',  skill:'smithing', name:'Forge Bronze Platebody',icon:'🛡️', lvl:8,  xp:50,  time:4.4, inputs:{ bar_bronze:3 },  output:'armor_bronze' },
+    { id:'fg_weapon_iron',   skill:'smithing', name:'Forge Iron Sword',      icon:'🗡️', lvl:23, xp:48,  time:4.4, inputs:{ bar_iron:1 },    output:'weapon_iron' },
+    { id:'fg_tool_iron',     skill:'smithing', name:'Forge Iron Toolkit',    icon:'🛠️', lvl:25, xp:70,  time:4.4, inputs:{ bar_iron:2 },    output:'tool_iron' },
+    { id:'fg_armor_iron',    skill:'smithing', name:'Forge Iron Platebody',  icon:'🛡️', lvl:28, xp:96,  time:4.8, inputs:{ bar_iron:3 },    output:'armor_iron' },
+    { id:'fg_weapon_steel',  skill:'smithing', name:'Forge Steel Sword',     icon:'⚔️', lvl:43, xp:80,  time:4.8, inputs:{ bar_steel:1 },   output:'weapon_steel' },
+    { id:'fg_tool_steel',    skill:'smithing', name:'Forge Steel Toolkit',   icon:'🛠️', lvl:45, xp:120, time:4.8, inputs:{ bar_steel:2 },   output:'tool_steel' },
+    { id:'fg_armor_steel',   skill:'smithing', name:'Forge Steel Platebody', icon:'🛡️', lvl:48, xp:160, time:5.2, inputs:{ bar_steel:3 },   output:'armor_steel' },
+    { id:'fg_weapon_mithril',skill:'smithing', name:'Forge Mithril Sword',   icon:'⚔️', lvl:58, xp:130, time:5.2, inputs:{ bar_mithril:1 }, output:'weapon_mithril' },
+    { id:'fg_tool_mithril',  skill:'smithing', name:'Forge Mithril Toolkit', icon:'🛠️', lvl:60, xp:200, time:5.2, inputs:{ bar_mithril:2 }, output:'tool_mithril' },
+    { id:'fg_armor_mithril', skill:'smithing', name:'Forge Mithril Platebody',icon:'🛡️',lvl:63, xp:260, time:5.6, inputs:{ bar_mithril:3 }, output:'armor_mithril' },
+    // Smithing — cut gems
+    { id:'cut_sapphire', skill:'smithing', name:'Cut Sapphire', icon:'🔹', lvl:20, xp:50,  time:3.0, inputs:{ usapphire:1 }, output:'sapphire' },
+    { id:'cut_emerald',  skill:'smithing', name:'Cut Emerald',  icon:'🟢', lvl:27, xp:67,  time:3.2, inputs:{ uemerald:1 },  output:'emerald' },
+    { id:'cut_ruby',     skill:'smithing', name:'Cut Ruby',     icon:'🔻', lvl:34, xp:85,  time:3.4, inputs:{ uruby:1 },     output:'ruby' },
+    { id:'cut_diamond',  skill:'smithing', name:'Cut Diamond',  icon:'🔸', lvl:43, xp:108, time:3.6, inputs:{ udiamond:1 },  output:'diamond' },
+    // Smithing — craft amulets (gem + bar). The dragonstone makes the best-in-slot Glory.
+    { id:'amu_acc',   skill:'smithing', name:'Craft Amulet of Accuracy', icon:'📿', lvl:22, xp:90,  time:4.5, inputs:{ sapphire:1, bar_iron:1 },   output:'amulet_sapphire' },
+    { id:'amu_forage',skill:'smithing', name:'Craft Amulet of Foraging', icon:'📿', lvl:30, xp:140, time:4.8, inputs:{ emerald:1, bar_steel:1 },   output:'amulet_emerald' },
+    { id:'amu_power', skill:'smithing', name:'Craft Amulet of Power',    icon:'📿', lvl:36, xp:170, time:4.8, inputs:{ ruby:1, bar_steel:1 },      output:'amulet_ruby' },
+    { id:'amu_skill', skill:'smithing', name:'Craft Amulet of Skill',    icon:'📿', lvl:46, xp:230, time:5.2, inputs:{ diamond:1, bar_mithril:1 }, output:'amulet_diamond' },
+    { id:'amu_glory', skill:'smithing', name:'Craft Amulet of Glory',    icon:'🏵️', lvl:60, xp:500, time:6.0, inputs:{ gem_dragon:1, bar_mithril:1 }, output:'amulet_glory' },
+  ];
+  const ACTION = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
+  // Rare gem drop tables for gathering (mult scales the base rate by node).
+  const gemTable = mult => [
+    { item:'usapphire', chance:0.0040 * mult },
+    { item:'uemerald',  chance:0.0016 * mult },
+    { item:'uruby',     chance:0.0007 * mult },
+    { item:'udiamond',  chance:0.00025 * mult },
+  ];
+  // Mining is the prime gem source; woodcutting/fishing only rarely (bird nests / oysters)
+  [['mn_copper',1],['mn_tin',1],['mn_iron',1.4],['mn_coal',1.8],['mn_mithril',2.6],
+   ['wc_normal',0.4],['wc_oak',0.5],['wc_willow',0.6],['wc_maple',0.7],
+   ['fs_shrimp',0.4],['fs_trout',0.5],['fs_salmon',0.6],['fs_lobster',0.7],['fs_sword',0.8]]
+    .forEach(([id, mult]) => { if (ACTION[id]) ACTION[id].rare = gemTable(mult); });
 
-  /* ── Achievements ─────────────────────────────────────────────*/
-  function registerAchievements() {
-    AchievementSystem.register('d_floor5',   '🗺️','Explorer',         'Reach floor 5.',               'Clear 5 floors');
-    AchievementSystem.register('d_floor20',  '🏰','Deep Delver',       'Reach floor 20.',              'Clear 20 floors');
-    AchievementSystem.register('d_floor50',  '🌋','Abyss Walker',      'Reach floor 50.',              'Clear 50 floors');
-    AchievementSystem.register('d_kill100',  '⚔️','Slayer',            'Kill 100 monsters.',           '100 kills');
-    AchievementSystem.register('d_kill1k',   '💀','Thousand Slayer',   'Kill 1,000 monsters.',         '1,000 kills');
-    AchievementSystem.register('d_epic',     '💜','Epic Find',         'Find an Epic rarity item.',    'Kill bosses');
-    AchievementSystem.register('d_rebirth1', '🌟','Born Again',        'Rebirth for the first time.',  'Reach floor 50');
-    AchievementSystem.register('d_rebirth3', '💫','Reborn Thrice',     'Rebirth 3 times.',             '3 rebirths');
-    AchievementSystem.register('d_tap1k',    '👊','Tapper\'s Fist',    'Tap 1,000 times in combat.',   'Tap to fight!');
-    AchievementSystem.register('d_gold1m',   '💰','Gold Hoarder',      'Earn 1 million gold all-time.','Earn lots of gold');
-    AchievementSystem.register('d_skill',     '⭐','Skilled',           'Learn your first skill.',      'Reach floor 10');
-    AchievementSystem.register('d_enchant',   '🔨','Blacksmith',        'Enchant a piece of gear.',     'Collect essence from bosses');
-    AchievementSystem.register('d_set',       '🧩','Matching Set',      'Equip a full Rare+ gear set.', 'Match all 3 gear rarities');
-    AchievementSystem.register('d_legend',    '🌟','Legend',            'Find a Legendary item.',       'Slay elites & guardians');
-    AchievementSystem.register('d_guardian',  '🛡️','Gatekeeper',        'Defeat a Zone Guardian.',      'Clear floor 10');
-    AchievementSystem.register('d_elite',     '✨','Elite Hunter',      'Slay an Elite monster.',       'Elites appear at random');
-    AchievementSystem.register('d_floor100',  '🐉','Abyssal',           'Reach floor 100.',             'Descend forever');
-    AchievementSystem.register('d_keys',      '🗝️','Key Collector',     'Collect 4 different zone keys.','Beat zone guardians');
-  }
+  /* ── Monsters (combat). reqCb gates by combat level. ──────────── */
+  const MONSTERS = [
+    { id:'chicken', name:'Chicken',      icon:'🐔', zone:'Greenfields', reqCb:1,  hp:6,   maxHit:1,  acc:2,  def:1,  xp:5,   coins:[1,4],    interval:2.4 },
+    { id:'rat',     name:'Giant Rat',    icon:'🐀', zone:'Greenfields', reqCb:1,  hp:12,  maxHit:2,  acc:4,  def:3,  xp:9,   coins:[2,6],    interval:2.4 },
+    { id:'wolf',    name:'Wolf',         icon:'🐺', zone:'Greenfields', reqCb:5,  hp:30,  maxHit:4,  acc:8,  def:7,  xp:18,  coins:[4,12],   interval:2.6 },
+    { id:'goblin',  name:'Goblin',       icon:'👺', zone:'Stonebreak',  reqCb:12, hp:55,  maxHit:6,  acc:16, def:14, xp:32,  coins:[8,22],   interval:2.6, drops:[{ item:'ore_iron', min:1, max:2, chance:0.10 }] },
+    { id:'bandit',  name:'Bandit',       icon:'🥷', zone:'Stonebreak',  reqCb:20, hp:90,  maxHit:9,  acc:28, def:24, xp:55,  coins:[18,44],  interval:2.6, drops:[{ item:'bar_iron', min:1, max:1, chance:0.06 }, { item:'weapon_iron', min:1, max:1, chance:0.01 }] },
+    { id:'hobgob',  name:'Hobgoblin',    icon:'👹', zone:'Stonebreak',  reqCb:30, hp:140, maxHit:13, acc:42, def:40, xp:90,  coins:[30,70],  interval:2.8, drops:[{ item:'ore_coal', min:1, max:3, chance:0.12 }, { item:'armor_iron', min:1, max:1, chance:0.01 }] },
+    { id:'troll',   name:'Mountain Troll',icon:'🧌',zone:'Frostpeak',   reqCb:42, hp:230, maxHit:19, acc:62, def:58, xp:150, coins:[55,120], interval:3.0, drops:[{ item:'ore_mithril', min:1, max:2, chance:0.08 }, { item:'weapon_steel', min:1, max:1, chance:0.008 }] },
+    { id:'ogre',    name:'Ogre',         icon:'👿', zone:'Frostpeak',   reqCb:55, hp:360, maxHit:26, acc:88, def:80, xp:240, coins:[90,200], interval:3.0, drops:[{ item:'bar_mithril', min:1, max:2, chance:0.06 }, { item:'armor_steel', min:1, max:1, chance:0.008 }] },
+    { id:'demon',   name:'Lesser Demon', icon:'😈', zone:'Emberdeep',   reqCb:70, hp:560, maxHit:36, acc:120,def:112,xp:400, coins:[160,340],interval:3.0, drops:[{ item:'weapon_mithril', min:1, max:1, chance:0.006 }, { item:'gem_dragon', min:1, max:1, chance:0.001 }] },
+    { id:'dragon',  name:'Green Dragon', icon:'🐉', zone:'Emberdeep',   reqCb:85, hp:880, maxHit:50, acc:170,def:160,xp:700, coins:[300,650],interval:3.2, drops:[{ item:'armor_mithril', min:1, max:1, chance:0.006 }, { item:'gem_dragon', min:1, max:1, chance:0.003 }] },
+  ];
+  const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m]));
+  const ZONES = [...new Set(MONSTERS.map(m => m.zone))];
 
-  /* ── State ─────────────────────────────────────────────────── */
-  let S = null;
-  let tickFn = null;
-  let autosaveTimer = null;
-  let combatTimer = 0;
+  /* ── State ───────────────────────────────────────────────────── */
+  let S = null, tickFn = null, autosaveTimer = null;
+  let progress = 0;            // seconds accumulated on the active action (transient)
+  let cmb = null;              // transient combat state { id, mhp, php, pAtk, mAtk, flash }
+  let renderThrottle = 0;
 
   function defaultState() {
+    const skillsXp = {};
+    SKILLS.forEach(s => { skillsXp[s.id] = (s.id === 'hitpoints') ? xpForLevel(10) : 0; });
     return {
-      gold:          0,
-      totalGold:     0,
-      allTimeGold:   0,
-      kills:         0,
-      taps:          0,
-      floor:         1,
-      wave:          1,
-      maxFloor:      0,
-      rebirths:      0,
-      souls:         0,
-      allTimeSouls:  0,  // total souls ever earned (display only)
-      soulUpgrades:  {}, // one-time soul upgrades: id -> true
-      soulLevels:    {}, // repeatable soul upgrades: id -> level
-      soulDmgMul:    0,
-      soulGoldMul:   0,
-      soulHpMul:     0,
-      soulCritBonus: 0,
-      soulStartFloor:0,
-      stats: { atk:0, hp:0, crit:0, crit2:0, spd:0 }, // levels, not values
-      gear:  { weapon:null, armor:null, ring:null },
-      inventory: [],     // backpack of unequipped gear the player curates
-      autoEquip: true,   // auto-equip a drop if it scores higher than what's worn
-      autoSellBelow: 0,  // auto-sell new drops with rarity < this (0 = off)
-      hp:    null, // current hp — set on enter
-      waveStreak:    0,  // waves cleared without dying (drives Bloodlust)
-      // ── Gated layers (persist across rebirth) ──
-      skillPoints:  0,
-      skills:       {},  // skillId -> level
-      maxFloorEver: 0,   // highest floor reached, ever (drives skill points)
-      essence:      0,   // crafting currency from bosses
-      enchant:      { weapon:0, armor:0, ring:0 },
-      keys:         {},  // zoneKeyName -> count (collected guardian trophies)
-      savedAt: Date.now(),
+      schema:      'realm',          // marker: distinguishes the reworked save
+      skillsXp,
+      bank:        { coins: 25 },
+      equip:       { weapon: null, armor: null, tool: null, amulet: null },
+      action:      null,             // { type:'skill', id } | { type:'combat', id }
+      combatStyle: 'attack',         // attack | strength | defence (Accurate/Aggressive/Defensive)
+      mastery:     {},               // actionId -> mastery xp (per-action progression)
+      shop:        {},               // shop upgrade id -> level (coin sink)
+      maxCombat:   0,
+      kills:       0,
+      actionsDone: 0,
+      savedAt:     Date.now(),
     };
   }
 
-  /* ── Computed hero stats ───────────────────────────────────── */
-  function heroAtk(state) {
-    const lvl  = state.stats.atk;
-    const base = STAT_DEFS[0].base + lvl * 2;
-    let gearBonus = 0;
-    if (state.gear.weapon) gearBonus += state.gear.weapon.value * enchantMul(state, 'weapon');
-    const soulMul  = 1 + (state.soulDmgMul || 0);
-    const skillMul = 1 + 0.05 * skillLvl(state, 'k_atk1');
-    const affixMul = 1 + gearAffixTotals(state).dmg / 100;
-    return Math.floor((base * soulMul + gearBonus) * skillMul * gearSetBonus(state) * affixMul);
+  /* ── Skill/level helpers ─────────────────────────────────────── */
+  function skillXp(id)    { return (S.skillsXp && S.skillsXp[id]) || 0; }
+  function skillLevel(id) { return levelForXp(skillXp(id)); }
+  function totalLevel()   { return SKILLS.reduce((s, k) => s + skillLevel(k.id), 0); }
+  function combatLevel() {
+    const a = skillLevel('attack'), st = skillLevel('strength'), d = skillLevel('defence'), h = skillLevel('hitpoints');
+    return Math.floor(0.25 * (d + h) + 0.325 * (a + st));
   }
-
-  function heroMaxHp(state) {
-    const lvl  = state.stats.hp;
-    const base = STAT_DEFS[1].base + lvl * 20;
-    let gearBonus = 0;
-    if (state.gear.armor) gearBonus += state.gear.armor.value * 5 * enchantMul(state, 'armor');
-    const soulMul  = 1 + (state.soulHpMul || 0);
-    const skillMul = 1 + 0.06 * skillLvl(state, 'k_hp1');
-    const affixMul = 1 + gearAffixTotals(state).hp / 100;
-    return Math.floor((base * soulMul + gearBonus) * skillMul * gearSetBonus(state) * affixMul);
-  }
-
-  function heroCrit(state) {
-    const lvl = state.stats.crit;
-    const ringCrit = state.gear.ring?.statIdx === 2 ? state.gear.ring.value / 10 * enchantMul(state, 'ring') : 0;
-    return Math.min(80, lvl * 2 + (state.soulCritBonus || 0) + 3 * skillLvl(state, 'k_crit') + ringCrit + gearAffixTotals(state).crit);
-  }
-
-  function heroCritDmg(state) {
-    const lvl = state.stats.crit2;
-    const ringDmg = state.gear.ring?.statIdx === 1 ? state.gear.ring.value * enchantMul(state, 'ring') : 0;
-    return 150 + lvl * 10 + ringDmg + 8 * skillLvl(state, 'k_focus') + gearAffixTotals(state).critd;
-  }
-
-  function goldMul(state) {
-    return (1 + (state.soulGoldMul || 0)) * (1 + 0.08 * skillLvl(state, 'k_gold1')) * (1 + gearAffixTotals(state).gold / 100);
-  }
-  function dropLuck(state) { return 0.04 * skillLvl(state, 'k_drop'); }
-  function skillsUnlocked(state) { return (state.maxFloorEver || 0) >= UNLOCK_SKILLS; }
-  // Fraction of damage healed back: Lifesteal skill + 'of Leeching' affixes
-  function lifestealFrac(state) {
-    return 0.02 * skillLvl(state, 'k_life') + gearAffixTotals(state).life / 100;
-  }
-
-  function heroSpeed(state) {
-    const lvl = state.stats.spd;
-    return Math.min(8, 1 + lvl * 0.2 + 0.15 * skillLvl(state, 'k_haste') + gearAffixTotals(state).spd / 100); // attacks per second
-  }
-
-  // Bloodlust: damage ramps as you clear waves without dying
-  function bloodlustMul(state) {
-    const l = skillLvl(state, 'k_momentum');
-    if (!l) return 1;
-    return 1 + l * Math.min(0.30, 0.03 * (state.waveStreak || 0));
-  }
-  // Executioner: bonus damage vs bosses & elites
-  function executionerMul(state, enemy) {
-    const l = skillLvl(state, 'k_exec');
-    if (!l || !enemy || (!enemy.isBoss && !enemy.isElite)) return 1;
-    return 1 + 0.08 * l;
-  }
-  // Combined situational damage multiplier applied at hit time
-  function combatDmgMul(state, enemy) {
-    return bloodlustMul(state) * executionerMul(state, enemy);
-  }
-
-  function statCost(stat, level) {
-    const def = STAT_DEFS.find(d => d.id === stat);
-    return Math.floor(def.costBase * Math.pow(def.costMul, level));
-  }
-  // Total gold to buy n levels of a stat from current level
-  function statCostBulk(stat, level, n) {
-    let c = 0;
-    for (let i = 0; i < n; i++) c += statCost(stat, level + i);
-    return c;
-  }
-  // Most levels affordable with given gold (respecting max cap)
-  function statMaxAffordable(stat, level, gold, cap) {
-    let n = 0, c = 0;
-    while (n < 100000) {
-      if (cap !== undefined && level + n >= cap) break;
-      const next = statCost(stat, level + n);
-      if (c + next > gold) break;
-      c += next; n++;
+  function maxHp() { return skillLevel('hitpoints') * 10; }
+  function addXp(id, amount) {
+    if (!amount) return;
+    amount = Math.round(amount * globalXpMul());   // Tome of Learning
+    const before = skillLevel(id);
+    S.skillsXp[id] = skillXp(id) + amount;
+    const after = skillLevel(id);
+    if (after > before) {
+      Toast.show(SKILL[id].icon, SKILL[id].name + ' Level ' + after + '!', after >= MAX_LEVEL ? 'Maxed — 99!' : '', after >= MAX_LEVEL);
+      Haptics.vibrate([40, 30, 60]);
+      checkAchievements();
     }
-    return n;
-  }
-  // Effective single-target DPS for display
-  function heroDps(state) {
-    const crit = heroCrit(state) / 100;
-    const critMul = 1 + crit * (heroCritDmg(state) / 100 - 1);
-    return heroAtk(state) * heroSpeed(state) * critMul;
   }
 
-  /* ── Enemy for current floor/wave ─────────────────────────── */
-  let currentEnemy = null;
+  /* ── Bank helpers ────────────────────────────────────────────── */
+  function bankCount(id) { return (S.bank && S.bank[id]) || 0; }
+  function bankAdd(id, q) { S.bank[id] = bankCount(id) + q; }
+  function bankRemove(id, q) { const n = bankCount(id) - q; if (n > 0) S.bank[id] = n; else delete S.bank[id]; }
+  function hasInputs(inputs) { return Object.keys(inputs).every(k => bankCount(k) >= inputs[k]); }
+  function spendInputs(inputs) { Object.keys(inputs).forEach(k => bankRemove(k, inputs[k])); }
 
-  function spawnEnemy() {
-    const theme    = themeFor(S.floor);
-    const isBoss   = S.wave === 10;
-    const isGuard  = isBoss && isGuardianFloor(S.floor);   // zone Guardian
-    // Elites: occasional tougher normal monster with much better loot
-    const isElite  = !isBoss && Math.random() < 0.10;
-    // Difficulty: floors ramp harder than before, and waves matter within a floor
-    const floorPow = 1 + (S.floor - 1) * 0.14 + (S.wave - 1) * 0.03;
-    const hpMod    = theme.hpMod || 1;
-    const atkMod   = theme.atkMod || 1;
-    const tierMul  = isGuard ? 14 : isBoss ? 6 : isElite ? 3 : 1;
-    const maxHp    = Math.max(1, Math.floor(28 * Math.pow(floorPow, 2.3) * hpMod * tierMul));
-    const goldTier = isGuard ? 28 : isBoss ? 11 : isElite ? 4 : 1;
-    const reward   = Math.floor(6 * Math.pow(floorPow, 1.15) * goldTier * goldMul(S));
-    const atk      = Math.floor(4 * Math.pow(floorPow, 1.85) * atkMod * (isBoss ? 1.4 : 1));
-    let icon;
-    if (isGuard)      icon = theme.guardian || theme.boss;
-    else if (isBoss)  icon = theme.boss;
-    else              icon = theme.enemies[Math.floor(Math.random() * theme.enemies.length)];
-    const name = isGuard ? `${theme.name} Guardian` : isBoss ? `${theme.name} Boss` : isElite ? 'Elite' : '';
-    currentEnemy = { icon, isBoss, isGuard, isElite, name, maxHp, hp: maxHp, reward, atk };
-    renderEnemy();
+  /* ── Equipment / derived combat bonuses ──────────────────────── */
+  function equippedItem(slot) { const id = S.equip[slot]; return id ? ITEMS[id] : null; }
+  function bonus(slot, key)   { const it = equippedItem(slot); return (it && it[key]) || 0; }
+  function toolSpeed()        { return bonus('tool', 'speed'); }
+
+  // Gathering/production speed: tool + skill level, capped. Synergies:
+  //  - mining level speeds Smithing; firemaking level cuts cooking burn.
+  function actionEffTime(a) {
+    let bonusPct = Math.min(0.30, skillLevel(a.skill) * 0.0025);   // up to -30% from level
+    bonusPct += masterySpeed(a.id);                                // per-action mastery
+    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + bonus('amulet', 'gspeed') + 0.03 * shopLvl('gloves');
+    if (a.skill === 'smithing') bonusPct += Math.min(0.20, skillLevel('mining') * 0.002); // mining→smithing synergy
+    return Math.max(0.3, a.time * (1 - Math.min(0.7, bonusPct)));
+  }
+  function cookBurnChance(a) {
+    return Math.max(0, a.burn - skillLevel('cooking') * 0.01 - skillLevel('firemaking') * 0.003);
+  }
+  // Rare-drop multiplier: Amulet of Foraging/Skill/Glory boost gem chances.
+  function rareBonus() { return 1 + bonus('amulet', 'rare'); }
+  // Cooking synergy + Iron Stomach shop upgrade: food heals more.
+  function foodHeal(id) { return Math.floor((ITEMS[id].heal || 0) * (1 + 0.005 * skillLevel('cooking') + 0.05 * shopLvl('stomach'))); }
+
+  /* ── Mastery: per-action progression (cap 50) ────────────────── */
+  const MASTERY_CAP = 50;
+  function masteryXpForLevel(L) { return Math.floor(40 * Math.pow(L, 2.2)); } // cumulative xp to reach L
+  function masteryXp(id)    { return (S.mastery && S.mastery[id]) || 0; }
+  function masteryLevel(id) { const xp = masteryXp(id); let L = 0; while (L < MASTERY_CAP && xp >= masteryXpForLevel(L + 1)) L++; return L; }
+  function masterySpeed(id) { return Math.min(0.20, masteryLevel(id) * 0.004); }  // up to -20% time
+  function masteryDouble(id){ return Math.min(0.30, masteryLevel(id) * 0.006); }  // up to +30% double yield
+  function addMastery(id, amount) {
+    if (!S.mastery) S.mastery = {};
+    const before = masteryLevel(id);
+    S.mastery[id] = masteryXp(id) + amount;
+    const after = masteryLevel(id);
+    if (after > before) {
+      const a = ACTION[id];
+      Toast.show('🎯', 'Mastery ' + after + (after >= MASTERY_CAP ? ' (MAX)' : ''), (a ? a.name : id) + ' — faster + more double yields');
+      if (after >= MASTERY_CAP) AchievementSystem.unlock('r_mastery');
+    }
   }
 
-  /* ── Offline progress ─────────────────────────────────────── */
+  /* ── Coin Store: permanent, stacking, coin-sink upgrades ─────── */
+  const SHOP = [
+    { id:'gloves',  name:'Gathering Gloves', icon:'🧤', max:10, base:500,  mul:1.8, fmt:l=>`+${l*3}% gathering speed` },
+    { id:'tome',    name:'Tome of Learning', icon:'📖', max:10, base:2000, mul:2.0, fmt:l=>`+${l*2}% XP from everything` },
+    { id:'stomach', name:'Iron Stomach',     icon:'🍖', max:10, base:900,  mul:1.7, fmt:l=>`+${l*5}% food healing` },
+    { id:'whet',    name:'Whetstone',        icon:'🎯', max:10, base:1500, mul:1.9, fmt:l=>`+${l*3}% combat damage` },
+    { id:'charm',   name:'Offline Charm',    icon:'⏳', max:12, base:1200, mul:1.6, fmt:l=>`+${l*2}h offline cap (${24 + l*2}h total)` },
+  ];
+  function shopLvl(id) { return (S.shop && S.shop[id]) || 0; }
+  function shopDef(id) { return SHOP.find(s => s.id === id); }
+  function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
+  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome'); }
+  function combatDmgMul() { return 1 + 0.03 * shopLvl('whet'); }
+  function offlineCap()   { return OFFLINE_CAP + shopLvl('charm') * 7200; }
+
+  /* ── Combat math ─────────────────────────────────────────────── */
+  function playerMaxHit() { return Math.floor((2 + (skillLevel('strength') + bonus('weapon', 'str') + bonus('amulet', 'str')) * 0.22) * combatDmgMul()); }
+  function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + (bonus('weapon', 'acc') + bonus('amulet', 'acc')) / 48); }
+  function playerDefRoll() { return (skillLevel('defence') + bonus('armor', 'def') + 8); }
+  function hitChance(atkRoll, defRoll) { return atkRoll / (atkRoll + defRoll); }
+  function playerDps(m) {
+    const hc = hitChance(playerAtkRoll(), m.def + 8);
+    return (playerMaxHit() / 2) * hc / PATK_INT;
+  }
+
+  /* ── Active-action control ───────────────────────────────────── */
+  window.IdleRealm_selectAction = function(id) {
+    const a = ACTION[id]; if (!a) return;
+    if (skillLevel(a.skill) < a.lvl) { Toast.show('🔒', 'Locked', `${SKILL[a.skill].name} Lv.${a.lvl} required`); return; }
+    S.action = { type: 'skill', id };
+    progress = 0; cmb = null;
+    Toast.show(a.icon, 'Training ' + SKILL[a.skill].name, a.name);
+    renderAll();
+  };
+  window.IdleRealm_fight = function(id) {
+    const m = MONSTER[id]; if (!m) return;
+    if (combatLevel() < m.reqCb) { Toast.show('🔒', 'Too dangerous', `Combat level ${m.reqCb} required`); return; }
+    S.action = { type: 'combat', id };
+    progress = 0;
+    cmb = { id, mhp: m.hp, php: maxHp(), pAtk: PATK_INT, mAtk: m.interval, flash: 0 };
+    Toast.show(m.icon, 'Fighting ' + m.name, 'Style: ' + styleName());
+    renderAll();
+  };
+  window.IdleRealm_stop = function() { S.action = null; cmb = null; progress = 0; renderAll(); };
+  window.IdleRealm_setStyle = function(st) {
+    S.combatStyle = st;
+    Toast.show('🥋', 'Combat style: ' + styleName(), SKILL[styleSkill()].name + ' gains XP');
+    renderActiveHeader(); if (activeTab === 'combat') renderCombatTab();
+  };
+  function styleSkill() { return S.combatStyle; }
+  function styleName() { return S.combatStyle === 'attack' ? 'Accurate' : S.combatStyle === 'strength' ? 'Aggressive' : 'Defensive'; }
+
+  /* ── Tick: process the single active action ──────────────────── */
+  function completeSkillCycle(a) {
+    if (a.inputs) {
+      if (!hasInputs(a.inputs)) { Toast.show('🛑', 'Out of materials', 'Stopped ' + a.name); S.action = null; return false; }
+      spendInputs(a.inputs);
+    }
+    const dbl = Math.random() < masteryDouble(a.id);   // mastery: chance at double yield
+    if (a.output) {
+      const burned = a.burn && Math.random() < cookBurnChance(a);
+      if (!burned) {
+        bankAdd(a.output, dbl ? 2 : 1); addXp(a.skill, a.xp); maybeAutoEquip(a.output);
+        const ot = ITEMS[a.output] && ITEMS[a.output].type;
+        if (ot === 'gem') AchievementSystem.unlock('r_gem');
+        if (ITEMS[a.output] && ITEMS[a.output].slot === 'amulet') AchievementSystem.unlock('r_amulet');
+        if (a.output === 'amulet_glory') AchievementSystem.unlock('r_glory');
+      } else { addXp(a.skill, Math.floor(a.xp * 0.3)); Toast.show('💢', 'Burnt!', 'Ruined a ' + itemName(a.output)); }
+    } else if (a.item) {
+      bankAdd(a.item, dbl ? 2 : 1); addXp(a.skill, a.xp);
+      rollRareDrops(a);
+    } else {
+      addXp(a.skill, dbl ? Math.round(a.xp * 1.5) : a.xp); // firemaking: no item, so double = bonus xp
+    }
+    addMastery(a.id, a.xp);
+    S.actionsDone++;
+    return true;
+  }
+  // Roll an action's rare gem table (with amulet bonus); announce finds.
+  function rollRareDrops(a, quiet) {
+    if (!a.rare) return;
+    for (const r of a.rare) {
+      if (Math.random() < r.chance * rareBonus()) {
+        bankAdd(r.item, 1);
+        AchievementSystem.unlock('r_uncut');
+        if (!quiet) Toast.show(itemIcon(r.item), 'Rare find!', 'You found an ' + itemName(r.item) + '!', true);
+      }
+    }
+  }
+
+  function bestFood() {
+    let best = null, heal = 0;
+    Object.keys(S.bank).forEach(id => {
+      const it = ITEMS[id];
+      if (it && it.type === 'food' && bankCount(id) > 0 && it.heal > heal) { heal = it.heal; best = id; }
+    });
+    return best;
+  }
+  function autoEat() {
+    const f = bestFood(); if (!f) return false;
+    bankRemove(f, 1); cmb.php = Math.min(maxHp(), cmb.php + foodHeal(f));
+    return true;
+  }
+
+  function killMonster(m) {
+    addXp(styleSkill(), m.xp);
+    addXp('hitpoints', Math.round(m.xp * 0.33));
+    const coins = m.coins[0] + Math.floor(Math.random() * (m.coins[1] - m.coins[0] + 1));
+    bankAdd('coins', coins);
+    (m.drops || []).forEach(d => {
+      if (Math.random() < d.chance) {
+        const q = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
+        bankAdd(d.item, q);
+        const it = ITEMS[d.item];
+        Toast.show(it.icon, 'Rare drop!', `${q}× ${it.name}`, true);
+        if (it.type === 'gear') maybeAutoEquip(d.item);
+      }
+    });
+    S.kills++;
+    const cb = combatLevel(); if (cb > (S.maxCombat || 0)) S.maxCombat = cb;
+    checkAchievements();
+    cmb.mhp = m.hp; // respawn another
+  }
+
+  function combatTick(dt) {
+    const m = MONSTER[S.action.id];
+    if (!cmb || cmb.id !== m.id) cmb = { id: m.id, mhp: m.hp, php: maxHp(), pAtk: PATK_INT, mAtk: m.interval, flash: 0 };
+    if (cmb.flash > 0) cmb.flash = Math.max(0, cmb.flash - dt);
+    // player attack
+    cmb.pAtk -= dt;
+    if (cmb.pAtk <= 0) {
+      cmb.pAtk += PATK_INT;
+      const hit = Math.random() < hitChance(playerAtkRoll(), m.def + 8);
+      const dmg = hit ? 1 + Math.floor(Math.random() * playerMaxHit()) : 0;
+      cmb.mhp -= dmg; cmb.flash = 0.15;
+      const area = document.getElementById('rl-enemy-area');
+      if (area) { const r = area.getBoundingClientRect(); floatNum(r.left + r.width / 2, r.top + r.height / 3, dmg || 'miss', dmg ? '#e05555' : '#9090b0'); }
+      if (cmb.mhp <= 0) { killMonster(m); return; }
+    }
+    // monster attack
+    cmb.mAtk -= dt;
+    if (cmb.mAtk <= 0) {
+      cmb.mAtk += m.interval;
+      const hit = Math.random() < hitChance(m.acc + 8, playerDefRoll());
+      const dmg = hit ? Math.floor(Math.random() * (m.maxHit + 1)) : 0;
+      cmb.php -= dmg;
+      if (cmb.php <= maxHp() * 0.45) autoEat();
+      if (cmb.php <= 0) {
+        if (!autoEat()) { // no food left → retreat
+          Toast.show('💀', 'You were defeated', 'Out of food — combat stopped. Cook some!');
+          Haptics.vibrate([90, 50, 90]);
+          S.action = null; cmb = null;
+        }
+      }
+    }
+  }
+
+  tickFn = function(dt) {
+    if (!S || !S.action) return;
+    if (S.action.type === 'combat') {
+      combatTick(dt);
+    } else {
+      const a = ACTION[S.action.id];
+      if (!a) { S.action = null; return; }
+      progress += dt;
+      const eff = actionEffTime(a);
+      let guard = 0;
+      while (progress >= eff && S.action && guard++ < 50) { progress -= eff; if (!completeSkillCycle(a)) { progress = 0; break; } }
+    }
+    renderThrottle += dt;
+    if (renderThrottle >= 0.25) {
+      renderThrottle = 0;
+      if (document.getElementById('screen-dungeon').classList.contains('active')) {
+        renderActiveHeader();
+        if (activeTab === 'bank') renderBankTab();
+      }
+    }
+  };
+
+  /* ── Equipment actions ───────────────────────────────────────── */
+  function maybeAutoEquip(id) {
+    const it = ITEMS[id]; if (!it || it.type !== 'gear') return;
+    if (it.slot === 'amulet') return; // amulets are a build choice — equip manually
+    const cur = equippedItem(it.slot);
+    if (!cur || (it.tier || 0) > (cur.tier || 0)) S.equip[it.slot] = id;
+  }
+  window.IdleRealm_equip = function(id) {
+    const it = ITEMS[id]; if (!it || it.type !== 'gear' || bankCount(id) < 1) return;
+    S.equip[it.slot] = id;
+    Toast.show(it.icon, 'Equipped', it.name);
+    Haptics.vibrate(30);
+    renderBankTab(); renderActiveHeader();
+  };
+  window.IdleRealm_sell = function(id) {
+    const it = ITEMS[id]; if (!it || id === 'coins') return;
+    const q = bankCount(id); if (q < 1) return;
+    const gold = (it.value || 1) * q;
+    bankRemove(id, q); bankAdd('coins', gold);
+    Toast.show('🪙', 'Sold ' + q + '× ' + it.name, '+' + Fmt.format(gold) + ' coins');
+    renderBankTab();
+  };
+  window.IdleRealm_buyShop = function(id) {
+    const def = shopDef(id); if (!def) return;
+    const lvl = shopLvl(id);
+    if (lvl >= def.max) return;
+    const cost = shopCost(def, lvl);
+    if (bankCount('coins') < cost) { Toast.show('🪙', 'Not enough coins', `Need ${Fmt.format(cost)} coins`); return; }
+    bankRemove('coins', cost);
+    if (!S.shop) S.shop = {};
+    S.shop[id] = lvl + 1;
+    AchievementSystem.unlock('r_store');
+    Toast.show(def.icon, def.name + ' → Lv.' + (lvl + 1), def.fmt(lvl + 1));
+    Haptics.vibrate(40);
+    renderStoreTab(); renderTopbar(); renderActiveHeader();
+  };
+
+  /* ── Achievements ────────────────────────────────────────────── */
+  function registerAchievements() {
+    AchievementSystem.register('r_first',   '🪵','First Harvest',   'Gather your first resource.',  'Start a gathering skill');
+    AchievementSystem.register('r_smith',   '🔨','Apprentice Smith','Smith your first bar.',        'Mine ore, then smelt it');
+    AchievementSystem.register('r_cook',    '🍳','Line Cook',       'Cook your first food.',        'Fish, then cook it');
+    AchievementSystem.register('r_kill10',  '⚔️','Blooded',         'Defeat 10 monsters.',          'Start a fight');
+    AchievementSystem.register('r_kill500', '💀','Monster Hunter',  'Defeat 500 monsters.',         'Keep fighting');
+    AchievementSystem.register('r_cb50',    '🛡️','Warrior',         'Reach combat level 50.',       'Train combat skills');
+    AchievementSystem.register('r_total300','📜','Jack of Trades',  'Reach total level 300.',       'Level many skills');
+    AchievementSystem.register('r_total750','🏅','Master',          'Reach total level 750.',       'The long grind');
+    AchievementSystem.register('r_99',      '🌟','Maxed a Skill',   'Reach level 99 in any skill.', 'Grind to 99');
+    AchievementSystem.register('r_rare',    '💎','Lucky',           'Receive a rare monster drop.', 'Fight tough monsters');
+    AchievementSystem.register('r_mith',    '🔵','Mithril Smith',   'Forge any Mithril gear.',      'Smith at level 58+');
+    AchievementSystem.register('r_uncut',   '🔹','Gem in the Rough', 'Find an uncut gem while gathering.', 'Gather a lot — gems are rare');
+    AchievementSystem.register('r_gem',     '💍','Lapidary',        'Cut a gem.',                   'Find then cut a gem');
+    AchievementSystem.register('r_amulet',  '📿','Jeweller',        'Craft an amulet.',             'Cut a gem, then craft');
+    AchievementSystem.register('r_glory',   '🏵️','For Glory',        'Craft the Amulet of Glory.',   'Needs a Dragonstone');
+    AchievementSystem.register('r_mastery', '🎯','Master of One',    'Max an action to mastery 50.', 'Repeat one action a lot');
+    AchievementSystem.register('r_store',   '🛒','Big Spender',      'Buy a Store upgrade.',         'Sell loot, spend coins');
+  }
+  function checkAchievements() {
+    if (S.kills >= 10)  AchievementSystem.unlock('r_kill10');
+    if (S.kills >= 500) AchievementSystem.unlock('r_kill500');
+    if (combatLevel() >= 50) AchievementSystem.unlock('r_cb50');
+    const tl = totalLevel();
+    if (tl >= 300) AchievementSystem.unlock('r_total300');
+    if (tl >= 750) AchievementSystem.unlock('r_total750');
+    if (SKILLS.some(s => skillLevel(s.id) >= MAX_LEVEL)) AchievementSystem.unlock('r_99');
+    if (bankCount('ore_copper') || bankCount('log_normal') || bankCount('fish_shrimp')) AchievementSystem.unlock('r_first');
+    ['bar_bronze','bar_iron','bar_steel','bar_mithril'].forEach(b => { if (bankCount(b)) AchievementSystem.unlock('r_smith'); });
+    ['food_shrimp','food_trout','food_salmon','food_lobster','food_sword'].forEach(f => { if (bankCount(f)) AchievementSystem.unlock('r_cook'); });
+    ['weapon_mithril','armor_mithril','tool_mithril'].forEach(g => { if (bankCount(g) || S.equip.weapon===g || S.equip.armor===g || S.equip.tool===g) AchievementSystem.unlock('r_mith'); });
+    if (bankCount('gem_dragon')) AchievementSystem.unlock('r_rare');
+  }
+
+  /* ── Offline progress ────────────────────────────────────────── */
   function applyOfflineProgress(save) {
-    const elapsed = Math.min((Date.now() - (save.savedAt || Date.now())) / 1000, OFFLINE_CAP);
-    if (elapsed < 60) return;
-    // Simulate gold from kills at current floor (matches live HP/reward curve)
     const d = save.data;
-    const theme  = themeFor(d.floor || 1);
-    const fp     = 1 + ((d.floor || 1) - 1) * 0.14;
-    const spd    = heroSpeed(d);
-    const atk    = heroAtk(d);
-    const enemyHp = Math.max(1, Math.floor(28 * Math.pow(fp, 2.3) * (theme.hpMod || 1)));
-    const killsPerSec = Math.min((spd * atk) / enemyHp, spd); // can't out-kill attack rate
-    const kills = Math.floor(killsPerSec * elapsed);
-    const goldPerKill = Math.floor(6 * Math.pow(fp, 1.15) * goldMul(d));
-    const earned = kills * goldPerKill;
-    if (earned < 1) return;
-    d.gold        = (d.gold || 0) + earned;
-    d.totalGold   = (d.totalGold || 0) + earned;
-    d.allTimeGold = (d.allTimeGold || 0) + earned;
-    d.kills       = (d.kills || 0) + kills;
-    if (!Settings.get('offlineModal')) {
-      Toast.show('👋', 'Welcome back', `Slew ${Fmt.format(kills)} foes · +${Fmt.format(earned)} gold`);
-      return;
-    }
+    if (!d.action) return;
+    const S0 = S; S = d; // run all helpers against the raw save
+    let summary = '', elapsed = 0;
+    try {
+      elapsed = Math.min((Date.now() - (save.savedAt || Date.now())) / 1000, offlineCap());
+      if (elapsed < 60) return;
+      const gxp = globalXpMul();
+      if (d.action.type === 'skill') {
+        const a = ACTION[d.action.id];
+        if (a) {
+          const eff = actionEffTime(a);
+          let cycles = Math.floor(elapsed / eff);
+          if (a.inputs) { // limited by available inputs
+            const maxByInput = Math.min.apply(null, Object.keys(a.inputs).map(k => Math.floor(bankCount(k) / a.inputs[k])));
+            cycles = Math.min(cycles, maxByInput);
+          }
+          if (cycles > 0) {
+            let made = 0, xp = 0;
+            for (let i = 0; i < cycles; i++) {
+              if (a.inputs) { if (!hasInputs(a.inputs)) break; spendInputs(a.inputs); }
+              const dbl = Math.random() < masteryDouble(a.id);
+              if (a.output) { const burn = a.burn && Math.random() < cookBurnChance(a); if (!burn) { bankAdd(a.output, dbl ? 2 : 1); made++; xp += a.xp; } else xp += Math.floor(a.xp * 0.3); }
+              else if (a.item) { bankAdd(a.item, dbl ? 2 : 1); made++; xp += a.xp; rollRareDrops(a, true); }
+              else { xp += dbl ? Math.round(a.xp * 1.5) : a.xp; made++; }
+            }
+            d.skillsXp[a.skill] = (d.skillsXp[a.skill] || 0) + Math.round(xp * gxp);
+            d.mastery = d.mastery || {}; d.mastery[a.id] = (d.mastery[a.id] || 0) + cycles * a.xp;
+            summary = `${SKILL[a.skill].name}: +${Fmt.format(Math.round(xp * gxp))} XP · ${Fmt.format(made)}× ${a.item ? itemName(a.item) : a.output ? itemName(a.output) : 'actions'}`;
+          }
+        }
+      } else if (d.action.type === 'combat') {
+        const m = MONSTER[d.action.id];
+        if (m) {
+          const dps = playerDps(m);
+          const ttk = Math.max(1, m.hp / Math.max(0.01, dps));
+          let kills = Math.floor(elapsed / ttk);
+          // sustain: cap by food healing vs damage taken
+          const dmgPerSec = (m.maxHit / 2) * hitChance(m.acc + 8, playerDefRoll()) / m.interval;
+          let foodPool = 0; Object.keys(d.bank).forEach(id => { const it = ITEMS[id]; if (it && it.type === 'food') foodPool += foodHeal(id) * bankCount(id); });
+          const sustainSecs = (maxHp() + foodPool) / Math.max(0.01, dmgPerSec);
+          if (sustainSecs < elapsed) kills = Math.min(kills, Math.floor(sustainSecs / ttk));
+          if (kills > 0) {
+            const sx = Math.round(m.xp * kills * gxp), hx = Math.round(m.xp * 0.33 * kills * gxp);
+            d.skillsXp[styleSkill()] = (d.skillsXp[styleSkill()] || 0) + sx;
+            d.skillsXp.hitpoints = (d.skillsXp.hitpoints || 0) + hx;
+            const coins = Math.round((m.coins[0] + m.coins[1]) / 2 * kills);
+            bankAdd('coins', coins);
+            (m.drops || []).forEach(dr => { const got = Math.floor(kills * dr.chance + Math.random()); if (got > 0) bankAdd(dr.item, got * (((dr.min + dr.max) >> 1) || 1)); });
+            // consume the food that was used (cheapest first)
+            let need = Math.max(0, dmgPerSec * Math.min(elapsed, kills * ttk) - maxHp());
+            const foods = Object.keys(d.bank).filter(id => ITEMS[id] && ITEMS[id].type === 'food').sort((a, b) => ITEMS[a].heal - ITEMS[b].heal);
+            for (const fid of foods) { while (need > 0 && bankCount(fid) > 0) { bankRemove(fid, 1); need -= foodHeal(fid); } }
+            d.kills = (d.kills || 0) + kills;
+            summary = `Combat: ${Fmt.format(kills)} kills · +${Fmt.format(sx)} ${styleName()} XP · +${Fmt.format(coins)} 🪙`;
+          }
+        }
+      }
+    } finally { S = S0; }
+    if (!summary) return;
+    if (!Settings.get('offlineModal')) { Toast.show('🌙', 'Welcome back', summary); return; }
     Modal.show({
-      title: '👋 Welcome back!',
-      body: `Away for <strong>${Fmt.time(elapsed)}</strong>.<br>
-             Your hero slew <strong>${Fmt.format(kills)}</strong> monsters and earned <strong class="text-gold">${Fmt.format(earned)} gold</strong>.`,
+      title: '🌙 Welcome back',
+      body: `You were away <strong>${Fmt.time(elapsed)}</strong> and kept working:<br><br>${summary}`,
       actions: [{ label: '⚔️ Continue', cls: 'btn-primary' }]
     });
   }
 
-  /* ── Load / save ───────────────────────────────────────────── */
+  /* ── Load / save ─────────────────────────────────────────────── */
   function loadGame() {
-    SaveSystem.registerMigrations(GAME_ID, {
-      // v1_to_v2: data => { return { ...data, newField: 0 }; }
-    });
+    SaveSystem.registerMigrations(GAME_ID, {});
     const save = SaveSystem.read(GAME_ID, SAVE_VERSION);
-    if (save) {
-      const legacy = save.data.maxFloorEver === undefined;   // pre-skill-tree save
-      const preSoulTracks = save.data.soulLevels === undefined; // pre soul-track rework
+    if (save && save.data && save.data.schema === 'realm') {
       applyOfflineProgress(save);
       S = Object.assign(defaultState(), save.data);
-      // Retroactively credit existing progress toward the skill tree (one-time)
-      if (legacy) {
-        S.maxFloorEver = Math.max(S.maxFloor || 0, S.floor || 0);
-        S.skillPoints  = (S.skillPoints || 0) + S.maxFloorEver;
-      }
-      // Migrate removed one-time soul upgrades: refund their souls so the
-      // player can re-spend them on the new repeatable tracks, and clear the
-      // old flat multipliers (the tracks are now the single source of truth).
-      if (preSoulTracks) {
-        const REMOVED = { su1:1, su2:1, su4:2, su6:5 };
-        let refund = 0;
-        Object.keys(REMOVED).forEach(id => { if (S.soulUpgrades && S.soulUpgrades[id]) { refund += REMOVED[id]; delete S.soulUpgrades[id]; } });
-        S.souls = (S.souls || 0) + refund;
-        S.soulLevels = {};
-        S.soulDmgMul = 0; S.soulHpMul = 0; S.soulGoldMul = 0;
-      }
     } else {
+      // No save, or an old Idle Dungeon save → start fresh in the new system
       S = defaultState();
     }
-    applySoulTracks(S); // recompute repeatable soul bonuses from stored levels
-    if (!Array.isArray(S.inventory)) S.inventory = [];
-    if (typeof S.autoEquip !== 'boolean') S.autoEquip = true;
-    if (typeof S.autoSellBelow !== 'number') S.autoSellBelow = 0;
-    if (S.hp === null || S.hp > heroMaxHp(S)) S.hp = heroMaxHp(S);
+    S.bank  = S.bank || { coins: 25 };
+    S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null }, S.equip || {});
+    S.mastery = S.mastery || {};
+    S.shop = S.shop || {};
+    if (!S.skillsXp) S.skillsXp = defaultState().skillsXp;
+    SKILLS.forEach(s => { if (typeof S.skillsXp[s.id] !== 'number') S.skillsXp[s.id] = (s.id === 'hitpoints' ? xpForLevel(10) : 0); });
+    progress = 0; cmb = null;
+    if (S.action && S.action.type === 'combat') { const m = MONSTER[S.action.id]; if (m) cmb = { id: m.id, mhp: m.hp, php: maxHp(), pAtk: PATK_INT, mAtk: m.interval, flash: 0 }; }
     S.savedAt = Date.now();
   }
+  function saveGame() { S.savedAt = Date.now(); SaveSystem.write(GAME_ID, SAVE_VERSION, S); }
 
-  function saveGame() {
-    S.savedAt = Date.now();
-    SaveSystem.write(GAME_ID, SAVE_VERSION, S);
+  /* ── Rendering ───────────────────────────────────────────────── */
+  let activeTab = localStorage.getItem('rl_tab') || 'skills';
+
+  window.IdleRealm_tab = function(tab, btn) {
+    activeTab = tab; localStorage.setItem('rl_tab', tab);
+    document.querySelectorAll('#screen-dungeon .tab-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderAll();
+  };
+  function syncTabButtons() {
+    document.querySelectorAll('#screen-dungeon .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === activeTab));
   }
 
-  /* ── Check achievements ────────────────────────────────────── */
-  function checkAchievements() {
-    if (S.floor >= 5)  AchievementSystem.unlock('d_floor5');
-    if (S.floor >= 20) AchievementSystem.unlock('d_floor20');
-    if (S.floor >= 50) AchievementSystem.unlock('d_floor50');
-    if (S.floor >= 100) AchievementSystem.unlock('d_floor100');
-    if (S.kills >= 100)  AchievementSystem.unlock('d_kill100');
-    if (S.kills >= 1000) AchievementSystem.unlock('d_kill1k');
-    if (S.taps  >= 1000) AchievementSystem.unlock('d_tap1k');
-    if (S.allTimeGold >= 1e6) AchievementSystem.unlock('d_gold1m');
-    if (S.rebirths >= 1) AchievementSystem.unlock('d_rebirth1');
-    if (S.rebirths >= 3) AchievementSystem.unlock('d_rebirth3');
-    // Check for epic / legendary gear
-    GEAR_SLOTS.forEach(slot => {
-      const rar = S.gear[slot]?.rarity;
-      if (rar >= 2) AchievementSystem.unlock('d_epic');
-      if (rar >= 3) AchievementSystem.unlock('d_legend');
-    });
-    if (S.keys && Object.keys(S.keys).length >= 4) AchievementSystem.unlock('d_keys');
-    if (gearSetBonus(S) > 1) AchievementSystem.unlock('d_set');
+  function xpBar(id) {
+    const lvl = skillLevel(id), xp = skillXp(id);
+    const cur = xpForLevel(lvl), next = xpForLevel(lvl + 1);
+    const pct = lvl >= MAX_LEVEL ? 100 : Math.max(0, (xp - cur) / (next - cur) * 100);
+    return { lvl, pct, xp, next };
+  }
+  // Expected XP/sec a skill action yields (accounts for cooking burn)
+  function actionXpRate(a) {
+    let perCycle = a.xp;
+    if (a.output && a.burn) { const bc = cookBurnChance(a); perCycle = a.xp * (1 - bc) + Math.floor(a.xp * 0.3) * bc; }
+    return perCycle / actionEffTime(a);
+  }
+  // Seconds until the next level in `skillId` at the given xp/sec (null if maxed/idle)
+  function etaToLevel(skillId, xpPerSec) {
+    const lvl = skillLevel(skillId);
+    if (lvl >= MAX_LEVEL || xpPerSec <= 0) return null;
+    return (xpForLevel(lvl + 1) - skillXp(skillId)) / xpPerSec;
+  }
+  // The next still-locked action in a skill (for "next unlock" ETA)
+  function nextUnlock(skillId) {
+    const lvl = skillLevel(skillId);
+    return ACTIONS.filter(a => a.skill === skillId && a.lvl > lvl).sort((a, b) => a.lvl - b.lvl)[0] || null;
+  }
+  // Compact ETA line for the active skill action
+  function skillEtaLine(a) {
+    const rate = actionXpRate(a);
+    const tl = etaToLevel(a.skill, rate);
+    let parts = [];
+    parts.push(tl != null ? `⏳ Lv.${skillLevel(a.skill) + 1} in <b>${Fmt.time(tl)}</b>` : '⏳ <b class="text-gold">maxed</b>');
+    const nu = nextUnlock(a.skill);
+    if (nu && rate > 0) parts.push(`🔓 ${nu.name} in <b>${Fmt.time((xpForLevel(nu.lvl) - skillXp(a.skill)) / rate)}</b>`);
+    return parts.join(' · ');
+  }
+  function foodCount() { return Object.keys(S.bank).reduce((n, id) => n + ((ITEMS[id] && ITEMS[id].type === 'food') ? bankCount(id) : 0), 0); }
+  // ETA line for combat: time to next level of the trained style skill
+  function combatEtaLine(m) {
+    const kps = playerDps(m) / m.hp;                 // kills per second
+    const tl = etaToLevel(styleSkill(), kps * m.xp);
+    const sk = SKILL[styleSkill()];
+    if (tl == null) return `⏳ ${sk.name} <b class="text-gold">maxed</b> · ~${Fmt.time(1 / kps)}/kill`;
+    return `⏳ ${sk.name} Lv.${skillLevel(styleSkill()) + 1} in <b>${Fmt.time(tl)}</b> · ~${Fmt.time(1 / kps)}/kill`;
   }
 
-  /* ── Combat resolution ─────────────────────────────────────── */
-
-  // Drop gold for selling an item; updates all gold counters
-  function gainGold(amount) {
-    S.gold += amount; S.totalGold += amount; S.allTimeGold = (S.allTimeGold || 0) + amount;
-  }
-  // Add an item to the backpack. If the bag is full, the single weakest
-  // item (which may be the new one) is auto-sold so loot is never lost.
-  function inventoryAdd(g) {
-    if (!Array.isArray(S.inventory)) S.inventory = [];
-    S.inventory.push(g);
-    while (S.inventory.length > INV_CAP) {
-      let worst = 0;
-      for (let i = 1; i < S.inventory.length; i++)
-        if (gearScore(S.inventory[i]) < gearScore(S.inventory[worst])) worst = i;
-      const junk = S.inventory.splice(worst, 1)[0];
-      const sell = sellValue(junk);
-      gainGold(sell);
-      Toast.show('💰', 'Bag full — auto-sold', `${junk.name} · +${Fmt.format(sell)} gold`);
-    }
-  }
-
-  // Stash a fresh drop: auto-sell it if its rarity is below the chosen
-  // threshold, otherwise file it in the bag for the player to curate.
-  function maybeStash(gear) {
-    if (gear.rarity < (S.autoSellBelow || 0)) {
-      const sell = sellValue(gear);
-      gainGold(sell);
-      Toast.show('💰', 'Auto-sold ' + gear.name, `+${Fmt.format(sell)} gold`);
+  function renderActiveHeader() {
+    const el = document.getElementById('rl-active');
+    if (!el) return;
+    if (!S.action) {
+      el.innerHTML = `<div style="padding:14px;text-align:center;color:var(--text2)">💤 Idle. Pick a skill or a monster below to start — only one action runs at a time.</div>`;
       return;
     }
-    inventoryAdd(gear);
-    Toast.show(gear.icon, 'Loot: ' + gear.name, affixSummary(gear) || 'Sent to your bag', gear.rarity >= 2);
-  }
-
-  // Roll & resolve a gear drop. With auto-equip on, a higher-scoring drop is
-  // worn immediately (the old piece drops into the bag); otherwise the drop
-  // is stashed (or auto-sold by tier) so loot stays meaningful but tidy.
-  function grantGear(quality) {
-    const gear = randomGear(S.floor, dropLuck(S), quality);
-    if (gear.rarity >= 3) AchievementSystem.unlock('d_legend');
-    if (gear.rarity >= 2) AchievementSystem.unlock('d_epic');
-    const equipped = S.gear[gear.slot];
-    if (S.autoEquip && (!equipped || gearScore(gear) > gearScore(equipped))) {
-      S.gear[gear.slot] = gear;
-      if (equipped) inventoryAdd(equipped);
-      const sub = affixSummary(gear) || `+${gear.value} ${STAT_DEFS[gear.statIdx].name}`;
-      Toast.show(gear.icon, gear.name + ' Equipped!', sub, gear.rarity >= 2);
+    if (S.action.type === 'combat') {
+      const m = MONSTER[S.action.id];
+      const mp = cmb ? Math.max(0, cmb.mhp / m.hp * 100) : 100;
+      const pp = cmb ? Math.max(0, cmb.php / maxHp() * 100) : 100;
+      el.innerHTML = `
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px">⚔️ Fighting · ${m.zone} · Style: <b>${styleName()}</b> <button class="bld-level" style="float:right" onclick="IdleRealm_stop()">⏹ Stop</button></div>
+        <div id="rl-enemy-area" style="text-align:center;font-size:46px;line-height:1;${cmb && cmb.flash > 0 ? 'filter:brightness(1.7)' : ''}">${m.icon}</div>
+        <div style="font-size:12px;color:var(--text2);text-align:center;margin:4px 0 2px">${m.name} · ${cmb ? Fmt.format(Math.max(0, Math.ceil(cmb.mhp))) : m.hp} / ${m.hp} HP</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${mp}%;background:var(--red)"></div></div>
+        <div style="font-size:12px;color:var(--text2);margin:8px 0 2px">❤️ You · ${cmb ? Fmt.format(Math.max(0, Math.ceil(cmb.php))) : maxHp()} / ${maxHp()} HP · 🍖 ${foodCount()} food</div>
+        <div class="progress-bar" style="height:8px"><div class="progress-fill green" style="width:${pp}%"></div></div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">${combatEtaLine(m)}</div>`;
     } else {
-      maybeStash(gear);
+      const a = ACTION[S.action.id];
+      const eff = actionEffTime(a);
+      const b = xpBar(a.skill);
+      el.innerHTML = `
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px">${a.icon} Training <b>${SKILL[a.skill].name}</b> · ${a.name} <button class="bld-level" style="float:right" onclick="IdleRealm_stop()">⏹ Stop</button></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px">
+          <span>Lv. <b>${b.lvl}</b>${b.lvl < MAX_LEVEL ? ` <span style="color:var(--text2)">→ ${Fmt.format(b.next)} xp</span>` : ' <span class="text-gold">MAX</span>'}</span>
+          <span class="text-green">+${a.xp} xp / ${eff.toFixed(1)}s</span>
+        </div>
+        <div class="progress-bar" style="height:8px;margin-top:4px"><div class="progress-fill" style="width:${b.pct}%;background:var(--accent)"></div></div>
+        <div class="progress-bar" style="height:5px;margin-top:4px"><div class="progress-fill green" style="width:${Math.min(100, progress / eff * 100)}%"></div></div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">${skillEtaLine(a)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">🎯 Mastery Lv.${masteryLevel(a.id)}/${MASTERY_CAP} · ${Math.round(masterySpeed(a.id) * 100)}% faster · ${Math.round(masteryDouble(a.id) * 100)}% double</div>`;
     }
   }
 
-  // Equip an item from the bag; the displaced piece returns to the bag.
-  window.DungeonGame_equip = function(idx) {
-    if (!S.inventory || !S.inventory[idx]) return;
-    const g = S.inventory.splice(idx, 1)[0];
-    const old = S.gear[g.slot];
-    S.gear[g.slot] = g;
-    if (old) S.inventory.push(old);
-    S.hp = Math.min(S.hp, heroMaxHp(S));
-    Toast.show(g.icon, g.name + ' equipped', affixSummary(g) || `+${g.value} ${STAT_DEFS[g.statIdx].name}`);
-    Haptics.vibrate(40);
-    checkAchievements();
-    renderGearTab(); renderCombat();
-  };
+  function renderTopbar() {
+    const el = document.getElementById('rl-topbar');
+    if (!el) return;
+    el.innerHTML = `🪙 <b class="text-gold">${Fmt.format(bankCount('coins'))}</b>
+      <span style="color:var(--text2)">·</span> ⚔️ CB <b>${combatLevel()}</b>
+      <span style="color:var(--text2)">·</span> 📊 Total <b>${totalLevel()}</b>`;
+  }
 
-  // Sell a single item from the bag for gold.
-  window.DungeonGame_sell = function(idx) {
-    if (!S.inventory || !S.inventory[idx]) return;
-    const g = S.inventory.splice(idx, 1)[0];
-    const sell = sellValue(g);
-    gainGold(sell);
-    Toast.show('💰', 'Sold ' + g.name, `+${Fmt.format(sell)} gold`);
-    Haptics.vibrate(30);
-    renderGearTab(); renderCombat();
-  };
-
-  // Sell every bagged item that doesn't beat what's already equipped.
-  window.DungeonGame_sellJunk = function() {
-    if (!S.inventory || !S.inventory.length) return;
-    let total = 0, n = 0;
-    S.inventory = S.inventory.filter(g => {
-      if (gearScore(g) > gearScore(S.gear[g.slot])) return true; // keep upgrades
-      total += sellValue(g); n++;
-      return false;
+  // Skills tab: each non-combat skill with its actions
+  function renderSkillsTab() {
+    const list = document.getElementById('rl-content');
+    if (!list || activeTab !== 'skills') return;
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
+    SKILLS.filter(s => s.kind !== 'combat').forEach(s => {
+      const b = xpBar(s.id);
+      html += `<div class="menu-section-title" style="padding:8px 2px 2px">${s.icon} ${s.name} <span style="color:var(--text2);font-weight:400">Lv.${b.lvl}</span>
+        <div class="progress-bar" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${b.pct}%;background:var(--accent)"></div></div></div>`;
+      ACTIONS.filter(a => a.skill === s.id).forEach(a => {
+        const locked = skillLevel(s.id) < a.lvl;
+        const active = S.action && S.action.type === 'skill' && S.action.id === a.id;
+        const inputTxt = a.inputs ? Object.keys(a.inputs).map(k => `${a.inputs[k]}× ${itemIcon(k)}`).join(' ') + ' → ' : '';
+        const outTxt = a.item ? itemIcon(a.item) + ' ' + itemName(a.item) : a.output ? itemIcon(a.output) + ' ' + itemName(a.output) : 'XP only';
+        html += `<button class="upgrade-item ${active ? '' : (locked ? 'locked' : 'can-buy')}" onclick="IdleRealm_selectAction('${a.id}')" style="${active ? 'border-color:var(--accent)' : ''}">
+            <div class="upg-icon">${a.icon}</div>
+            <div class="upg-info">
+              <div class="upg-name">${a.name} ${active ? '<span class="text-accent" style="font-size:11px">● active</span>' : ''}</div>
+              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Lv.${a.lvl}` : `${inputTxt}${outTxt}`}</div>
+              ${!locked && masteryLevel(a.id) > 0 ? `<div style="font-size:11px;color:var(--accent)">🎯 Mastery ${masteryLevel(a.id)}</div>` : ''}
+            </div>
+            <div style="text-align:right;flex-shrink:0;font-size:12px"><div class="text-green">+${a.xp} xp</div><div style="color:var(--text2)">${a.time.toFixed(1)}s</div></div>
+          </button>`;
+      });
     });
-    if (n) { gainGold(total); Toast.show('💰', `Sold ${n} item${n>1?'s':''}`, `+${Fmt.format(total)} gold`); Haptics.vibrate(40); }
-    else Toast.show('🎒', 'Nothing to sell', 'Every bagged item beats your gear.');
-    renderGearTab(); renderCombat();
-  };
-
-  window.DungeonGame_toggleAutoEquip = function() {
-    S.autoEquip = !S.autoEquip;
-    Toast.show('🎚️', 'Auto-equip ' + (S.autoEquip ? 'ON' : 'OFF'), S.autoEquip ? 'Upgrades equip themselves' : 'All drops go to your bag');
-    renderGearTab();
-  };
-
-  // Cycle the auto-sell tier: Off → Common → ≤Rare → ≤Epic → Off
-  window.DungeonGame_cycleAutoSell = function() {
-    S.autoSellBelow = ((S.autoSellBelow || 0) + 1) % AUTOSELL_LABELS.length;
-    const lvl = S.autoSellBelow;
-    Toast.show('🗑️', 'Auto-sell: ' + AUTOSELL_LABELS[lvl], lvl ? `New ${AUTOSELL_LABELS[lvl]} drops are sold automatically` : 'All drops are kept');
-    renderGearTab();
-  };
-
-  // Roll whether a kill drops gear. base chance + a little from Treasure Hunter.
-  function gearDrops(base) {
-    return Math.random() < Math.min(0.95, base + 0.03 * skillLvl(S, 'k_drop'));
+    html += '</div>';
+    list.innerHTML = html;
   }
 
-  function onHeroDeath() {
-    const reviveFrac = Math.min(0.95, 0.4 + 0.08 * skillLvl(S, 'k_wind'));
-    S.hp = heroMaxHp(S) * reviveFrac;
-    S.wave = Math.max(1, S.wave - 1);
-    S.waveStreak = 0; // lose Bloodlust momentum
-    Toast.show('💀', 'You fell!', 'Back to wave ' + S.wave);
-    Haptics.vibrate([90, 50, 90]);
-    spawnEnemy();
-  }
-
-  function onEnemyKilled() {
-    const e = currentEnemy;
-    S.gold      += e.reward;
-    S.totalGold += e.reward;
-    S.allTimeGold = (S.allTimeGold || 0) + e.reward;
-    S.kills++;
-    S.waveStreak = (S.waveStreak || 0) + 1;
-
-    if (e.isElite) { AchievementSystem.unlock('d_elite'); if (gearDrops(0.55)) grantGear(1); }
-
-    if (e.isBoss) {
-      S.maxFloor = Math.max(S.maxFloor, S.floor);
-      const essBase = 1 + Math.floor(S.floor / 10);
-      const essMul  = 1 + 0.20 * skillLvl(S, 'k_ess');
-      const essGain = Math.max(1, Math.round(essBase * essMul * (e.isGuard ? 3 : 1)));
-      S.essence = (S.essence || 0) + essGain;
-      // Guardians always reward gear (milestone); normal bosses drop ~45% of the time
-      if (e.isGuard) grantGear(2);
-      else if (gearDrops(0.45)) grantGear(0);
-      if (e.isGuard) {
-        const theme = themeFor(S.floor);
-        if (!S.keys) S.keys = {};
-        S.keys[theme.keyName] = (S.keys[theme.keyName] || 0) + 1;
-        AchievementSystem.unlock('d_guardian');
-        Toast.show(theme.key, 'Guardian Slain!', `Claimed the ${theme.keyName} · +${essGain} 💎`, true);
-      }
-      S.floor++;
-      S.wave = 1;
-      // One skill point per new highest floor reached
-      if (S.floor > (S.maxFloorEver || 0)) {
-        const gained = S.floor - (S.maxFloorEver || 0);
-        S.maxFloorEver = S.floor;
-        S.skillPoints = (S.skillPoints || 0) + gained;
-        if (skillsUnlocked(S)) Toast.show('⭐', 'Skill Point!', `+${gained} to spend in the Skills tab.`);
-      }
-      Haptics.vibrate([60, 40, 100]);
-    } else {
-      S.wave = Math.min(S.wave + 1, 10);
-    }
-    S.hp = Math.min(S.hp + heroMaxHp(S) * 0.12, heroMaxHp(S)); // heal 12% on kill
-    checkAchievements();
-    spawnEnemy();
-  }
-
-  function resolveHit() {
-    if (!currentEnemy || !S) return;
-    let dmg = heroAtk(S);
-    const isCrit = Math.random() * 100 < heroCrit(S);
-    if (isCrit) dmg = Math.floor(dmg * heroCritDmg(S) / 100);
-    const ms = skillLvl(S, 'k_multi');
-    const multi = ms && Math.random() * 100 < ms * 5;
-    if (multi) dmg *= 2;
-    dmg = Math.max(1, Math.floor(dmg * combatDmgMul(S, currentEnemy)));
-
-    currentEnemy.hp -= dmg;
-
-    // Lifesteal (skill + 'of Leeching' affixes)
-    const lf = lifestealFrac(S);
-    if (lf) S.hp = Math.min(heroMaxHp(S), S.hp + dmg * lf);
-
-    // Show floating dmg on enemy area
-    const enemyEl = document.getElementById('dn-enemy-area');
-    if (enemyEl) {
-      const r = enemyEl.getBoundingClientRect();
-      const tag = multi ? '⚡' : (isCrit ? '💥' : '');
-      floatNum(r.left + r.width/2, r.top + r.height/3, tag + Fmt.format(dmg), isCrit || multi ? '#f5c542' : '#e05555');
-    }
-
-    // Hero takes damage per attack interval
-    S.hp -= currentEnemy.atk * (1 / heroSpeed(S));
-    if (S.hp <= 0) { onHeroDeath(); return; }
-    if (currentEnemy.hp <= 0) onEnemyKilled();
-    renderCombat();
-  }
-
-  /* ── Tap attack ────────────────────────────────────────────── */
-  window.DungeonGame_tap = function(e) {
-    if (!S || !currentEnemy) return;
-    S.taps++;
-    const cleaveMul = 1 + 0.4 * skillLvl(S, 'k_cleave'); // Power Tap: +40% per level
-    let dmg = Math.floor(heroAtk(S) * 2.5 * cleaveMul);
-    const isCrit = Math.random() * 100 < heroCrit(S);
-    if (isCrit) dmg = Math.floor(dmg * heroCritDmg(S) / 100);
-    dmg = Math.max(1, Math.floor(dmg * combatDmgMul(S, currentEnemy)));
-    currentEnemy.hp -= dmg;
-    const lf = lifestealFrac(S);
-    if (lf) S.hp = Math.min(heroMaxHp(S), S.hp + dmg * lf);
-    floatNum(e.clientX, e.clientY, (isCrit ? '💥' : '👊') + Fmt.format(dmg), isCrit ? '#f5c542' : '#fff');
-    Haptics.vibrate(25);
-    if (currentEnemy.hp <= 0) { onEnemyKilled(); renderCombat(); }
-    else renderEnemy();
-    checkAchievements();
-  };
-
-  window.DungeonGame_upgradestat = function(id) {
-    const lvl = S.stats[id];
-    const def = STAT_DEFS.find(d => d.id === id);
-    if (def.max !== undefined && lvl >= def.max) return;
-    let n = dnBuyAmount === 'max' ? statMaxAffordable(id, lvl, S.gold, def.max) : parseInt(dnBuyAmount);
-    if (def.max !== undefined) n = Math.min(n, def.max - lvl);
-    if (n < 1) return;
-    const cost = statCostBulk(id, lvl, n);
-    if (S.gold < cost) return;
-    S.gold -= cost;
-    S.stats[id] += n;
-    Haptics.vibrate(40);
-    renderStats();
-    renderCombat();
-  };
-
-  function skillReqMet(sk) {
-    return !sk.req || skillLvl(S, sk.req) >= (sk.reqLvl || 1);
-  }
-
-  window.DungeonGame_buySkill = function(id) {
-    const sk = SKILLS.find(s => s.id === id);
-    if (!sk) return;
-    const lvl = skillLvl(S, id);
-    if (lvl >= sk.max) return;
-    if (!skillReqMet(sk)) {
-      const reqSk = SKILLS.find(s => s.id === sk.req);
-      Toast.show('🔒', 'Locked', `Requires ${reqSk ? reqSk.name : 'previous skill'} Lv.${sk.reqLvl || 1}.`);
-      return;
-    }
-    if ((S.skillPoints || 0) < sk.cost) { Toast.show('⭐', 'Not enough points', `Need ${sk.cost} skill points.`); return; }
-    S.skillPoints -= sk.cost;
-    if (!S.skills) S.skills = {};
-    S.skills[id] = lvl + 1;
-    AchievementSystem.unlock('d_skill');
-    Toast.show(sk.icon, sk.name + ' → Lv.' + (lvl + 1), sk.desc(lvl + 1));
-    Haptics.vibrate(40);
-    renderSkillTab();
-    renderCombat();
-  };
-
-  window.DungeonGame_enchant = function(slot) {
-    const g = S.gear[slot];
-    if (!g) { Toast.show('🔨', 'Nothing equipped', 'Find gear from bosses first.'); return; }
-    if (!S.enchant) S.enchant = { weapon:0, armor:0, ring:0 };
-    const lvl  = S.enchant[slot] || 0;
-    const cost = lvl + 1; // essence cost rises with level
-    if ((S.essence || 0) < cost) { Toast.show('💎', 'Not enough essence', `Need ${cost} essence.`); return; }
-    S.essence -= cost;
-    S.enchant[slot] = lvl + 1;
-    AchievementSystem.unlock('d_enchant');
-    Toast.show('🔨', 'Gear Enchanted', `${g.name} +${(lvl+1)*8}% (Lv.${lvl+1})`);
-    Haptics.vibrate([40,30,60]);
-    renderGearTab();
-    renderCombat();
-  };
-
-  window.DungeonGame_buySoulUpgrade = function(id) {
-    const u = SOUL_UPGRADES.find(u => u.id === id);
-    if (!u || S.soulUpgrades[id]) return;
-    if (S.souls < u.cost) return;
-    S.souls -= u.cost;
-    S.soulUpgrades[id] = true;
-    u.apply(S);
-    Toast.show(u.icon, 'Soul Power', u.name + ': ' + u.desc);
-    Haptics.vibrate([60,40,80]);
-    renderSoulTab();
-    renderCombat();
-  };
-
-  window.DungeonGame_buySoulTrack = function(id) {
-    const t = SOUL_TRACKS.find(t => t.id === id);
-    if (!t) return;
-    const lvl  = soulTrackLvl(S, id);
-    const cost = soulTrackCost(t, lvl);
-    if ((S.souls || 0) < cost) { Toast.show('💫', 'Not enough souls', `Need ${cost} souls.`); return; }
-    S.souls -= cost;
-    if (!S.soulLevels) S.soulLevels = {};
-    S.soulLevels[id] = lvl + 1;
-    t.apply(S, lvl + 1);
-    if (S.hp > heroMaxHp(S)) S.hp = heroMaxHp(S);
-    Toast.show(t.icon, t.name + ' → Lv.' + (lvl + 1), t.fmt(lvl + 1));
-    Haptics.vibrate([60,40,80]);
-    renderSoulTab();
-    renderCombat();
-  };
-
-  const REBIRTH_FLOOR = 50;
-  // Souls scale with how deep you got — going past your previous best pays off.
-  function soulsForFloor(maxFloor) {
-    if (maxFloor < REBIRTH_FLOOR) return 0;
-    return Math.max(1, Math.floor(Math.pow(maxFloor / 10, 1.35)));
-  }
-
-  window.DungeonGame_rebirth = function() {
-    if (S.maxFloor < REBIRTH_FLOOR) {
-      Toast.show('⚠️', 'Not yet', `Reach floor ${REBIRTH_FLOOR} this run to rebirth.`);
-      return;
-    }
-    const souls = soulsForFloor(S.maxFloor);
-    Modal.show({
-      title: '🌟 Rebirth',
-      body: `Reset your <b>gold, stats and floor</b> — keep gear, skills, enchants and soul powers.<br><br>
-             Gain <strong class="text-accent">${souls} Souls</strong> for reaching floor <strong>${S.maxFloor}</strong> this run.<br>
-             <span class="text-muted" style="font-size:13px">You'll start over near floor ${Math.max(1, S.soulStartFloor || 1)} and must climb again — but reaching <b>deeper than ${S.maxFloor}</b> next time grants even more souls.</span>`,
-      actions: [
-        { label: 'Cancel', cls: '' },
-        { label: '🌟 Rebirth', cls: 'btn-primary', fn: () => {
-          const gear     = S.gear;
-          const inventory = S.inventory;
-          const autoEquip = S.autoEquip;
-          const autoSellBelow = S.autoSellBelow;
-          const rebirths = S.rebirths + 1;
-          const soulMods = { soulDmgMul: S.soulDmgMul, soulGoldMul: S.soulGoldMul, soulHpMul: S.soulHpMul, soulCritBonus: S.soulCritBonus, soulStartFloor: S.soulStartFloor };
-          const soulUpgrades = S.soulUpgrades, soulLevels = S.soulLevels;
-          const allTimeGold  = S.allTimeGold;
-          const allTimeSouls = (S.allTimeSouls || 0) + souls;
-          const kills        = S.kills;
-          // Meta layers persist across rebirth
-          const keepSkillPts = S.skillPoints, keepSkills = S.skills, keepMaxEver = S.maxFloorEver;
-          const keepEssence  = S.essence, keepEnchant = S.enchant, keepKeys = S.keys;
-          const carrySouls   = (S.souls || 0) + souls;
-          S = defaultState();
-          // maxFloor intentionally RESET — you must re-climb to rebirth again
-          S.gear        = gear;
-          S.inventory   = inventory;
-          S.autoEquip   = autoEquip;
-          S.autoSellBelow = autoSellBelow;
-          S.rebirths    = rebirths;
-          S.souls       = carrySouls;
-          S.allTimeSouls = allTimeSouls;
-          S.soulUpgrades = soulUpgrades;
-          S.soulLevels  = soulLevels;
-          S.allTimeGold  = allTimeGold;
-          S.kills        = kills;
-          S.skillPoints = keepSkillPts;
-          S.skills      = keepSkills;
-          S.maxFloorEver= keepMaxEver;
-          S.essence     = keepEssence;
-          S.enchant     = keepEnchant;
-          S.keys        = keepKeys;
-          Object.assign(S, soulMods);
-          applySoulTracks(S);
-          S.floor = Math.max(1, S.soulStartFloor || 1);
-          S.wave  = 1;
-          // maxFloor resets on rebirth (must re-climb to rebirth again), but
-          // seed it to the start floor so the Floors tab can navigate the
-          // floors the hero already begins on.
-          S.maxFloor = Math.max(0, S.floor - 1);
-          S.hp = heroMaxHp(S);
-          AchievementSystem.unlock('d_rebirth1');
-          if (rebirths >= 3) AchievementSystem.unlock('d_rebirth3');
-          Toast.show('🌟', 'Reborn!', `+${souls} souls · ${S.souls} to spend`);
-          spawnEnemy();
-          renderAll2();
-        }}
-      ]
+  function renderCombatTab() {
+    const list = document.getElementById('rl-content');
+    if (!list || activeTab !== 'combat') return;
+    const styles = [['attack', 'Accurate', '⚔️'], ['strength', 'Aggressive', '💪'], ['defence', 'Defensive', '🛡️']];
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
+    html += `<div style="font-size:12px;color:var(--text2)">Combat style — which skill your kills train (Hitpoints always shares):</div>
+      <div style="display:flex;gap:6px">${styles.map(([id, nm, ic]) => `<button class="buy-amt-btn ${S.combatStyle === id ? 'active' : ''}" style="flex:1" onclick="IdleRealm_setStyle('${id}')">${ic} ${nm}</button>`).join('')}</div>`;
+    ZONES.forEach(z => {
+      html += `<div class="menu-section-title" style="padding:8px 2px 2px">📍 ${z}</div>`;
+      MONSTERS.filter(m => m.zone === z).forEach(m => {
+        const locked = combatLevel() < m.reqCb;
+        const active = S.action && S.action.type === 'combat' && S.action.id === m.id;
+        const dropTxt = (m.drops || []).length ? ' · drops ' + m.drops.map(d => itemIcon(d.item)).join('') : '';
+        html += `<button class="upgrade-item ${active ? '' : (locked ? 'locked' : 'can-buy')}" onclick="IdleRealm_fight('${m.id}')" style="${active ? 'border-color:var(--accent)' : ''}">
+            <div class="upg-icon">${m.icon}</div>
+            <div class="upg-info">
+              <div class="upg-name">${m.name} ${active ? '<span class="text-accent" style="font-size:11px">● fighting</span>' : ''}</div>
+              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Combat Lv.${m.reqCb}` : `${m.hp} HP · max hit ${m.maxHit} · +${m.xp} xp${dropTxt}`}</div>
+            </div>
+            <div style="flex-shrink:0;font-size:12px;color:var(--text2)">CB ${m.reqCb}</div>
+          </button>`;
+      });
     });
-  };
+    html += '</div>';
+    list.innerHTML = html;
+  }
 
-  window.DungeonGame_setFloor = function(f) {
-    if (f > S.maxFloor + 1) return;
-    S.floor = f;
-    S.wave  = 1;
-    spawnEnemy();
-    renderCombat();
-  };
+  function renderBankTab() {
+    const list = document.getElementById('rl-content');
+    if (!list || activeTab !== 'bank') return;
+    const ids = Object.keys(S.bank).filter(id => bankCount(id) > 0);
+    const order = { currency: 0, gear: 1, food: 2, bar: 3, ore: 4, log: 5, raw: 6, treasure: 7 };
+    ids.sort((a, b) => (order[(ITEMS[a] || {}).type] ?? 9) - (order[(ITEMS[b] || {}).type] ?? 9));
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
+    html += `<div style="font-size:12px;color:var(--text2)">Bank — tap gear to equip, or sell items for coins.</div>`;
+    ids.forEach(id => {
+      const it = ITEMS[id] || { name: id, icon: '❔' };
+      const isGear = it.type === 'gear';
+      const equipped = isGear && S.equip[it.slot] === id;
+      let sub = '';
+      if (isGear) {
+        if (it.slot === 'weapon') sub = `+${it.acc} acc / +${it.str} str`;
+        else if (it.slot === 'armor') sub = `+${it.def} def`;
+        else if (it.slot === 'tool') sub = `+${Math.round(it.speed * 100)}% gather`;
+        else if (it.slot === 'amulet') sub = [it.acc?`+${it.acc} acc`:'', it.str?`+${it.str} str`:'', it.gspeed?`+${Math.round(it.gspeed*100)}% gather`:'', it.rare?`+${Math.round(it.rare*100)}% rare drops`:''].filter(Boolean).join(', ');
+      }
+      else if (it.type === 'food') sub = `heals ${foodHeal(id)}`;
+      else if (id !== 'coins') sub = `${it.value || 1} ea`;
+      html += `<div class="upgrade-item" style="${equipped ? 'border-color:var(--accent)' : ''}">
+          <div class="upg-icon">${it.icon}</div>
+          <div class="upg-info"><div class="upg-name">${it.name} <span style="color:var(--text2);font-size:12px">×${Fmt.format(bankCount(id))}</span> ${equipped ? '<span class="text-accent" style="font-size:11px">equipped</span>' : ''}</div>
+            <div style="font-size:12px;color:var(--text2)">${sub}</div></div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            ${isGear && !equipped ? `<button class="bld-level can-buy" onclick="IdleRealm_equip('${id}')">Equip</button>` : ''}
+            ${id !== 'coins' ? `<button class="bld-level" onclick="IdleRealm_sell('${id}')" style="color:var(--gold)">🪙${Fmt.format((it.value || 1) * bankCount(id))}</button>` : ''}
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+    list.innerHTML = html;
+  }
 
-  window.DungeonGame_help = function() {
+  function renderStatsTab() {
+    const list = document.getElementById('rl-content');
+    if (!list || activeTab !== 'stats') return;
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:8px">';
+    const eq = ['weapon', 'armor', 'tool', 'amulet'].map(sl => { const it = equippedItem(sl); return `${sl}: ${it ? it.icon + ' ' + it.name : '—'}`; }).join(' · ');
+    html += `<div style="font-size:12px;color:var(--text2)">Equipped — ${eq}</div>`;
+    html += `<div class="stat-row"><span class="text-muted">Combat level</span><span class="text-accent">${combatLevel()}</span></div>`;
+    html += `<div class="stat-row"><span class="text-muted">Total level</span><span>${totalLevel()} / ${SKILLS.length * 99}</span></div>`;
+    html += `<div class="stat-row"><span class="text-muted">Max hit / Max HP</span><span>${playerMaxHit()} / ${maxHp()}</span></div>`;
+    html += `<div class="stat-row"><span class="text-muted">Monsters slain</span><span>${Fmt.format(S.kills || 0)}</span></div>`;
+    SKILLS.forEach(s => {
+      const b = xpBar(s.id);
+      html += `<div style="margin-top:2px">
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span>${s.icon} ${s.name}</span><span>Lv.${b.lvl} <span style="color:var(--text2);font-size:11px">${Fmt.format(b.xp)} xp</span></span></div>
+        <div class="progress-bar" style="height:5px;margin-top:2px"><div class="progress-fill" style="width:${b.pct}%;background:${s.kind === 'combat' ? 'var(--red)' : 'var(--accent)'}"></div></div></div>`;
+    });
+    html += '</div>';
+    list.innerHTML = html;
+  }
+
+  function renderStoreTab() {
+    const list = document.getElementById('rl-content');
+    if (!list || activeTab !== 'store') return;
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
+    html += `<div style="font-size:12px;color:var(--text2)">General Store — spend 🪙 coins (from selling loot & monster kills) on permanent upgrades.</div>`;
+    SHOP.forEach(def => {
+      const lvl = shopLvl(def.id);
+      const maxed = lvl >= def.max;
+      const cost = shopCost(def, lvl);
+      const aff = !maxed && bankCount('coins') >= cost;
+      html += `<button class="upgrade-item ${maxed ? '' : (aff ? 'can-buy' : 'locked')}" ${maxed ? '' : `onclick="IdleRealm_buyShop('${def.id}')"`}>
+          <div class="upg-icon">${def.icon}</div>
+          <div class="upg-info">
+            <div class="upg-name">${def.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}/${def.max}</span></div>
+            <div style="font-size:12px;color:var(--text2)">${def.fmt(Math.max(1, lvl))}${!maxed ? ` <span style="color:var(--green)">→ ${def.fmt(lvl + 1)}</span>` : ''}</div>
+          </div>
+          <div class="text-gold" style="font-size:13px;flex-shrink:0">${maxed ? 'MAX' : '🪙 ' + Fmt.format(cost)}</div>
+        </button>`;
+    });
+    html += '</div>';
+    list.innerHTML = html;
+  }
+
+  function renderAll() {
+    if (!S) return;
+    renderTopbar(); renderActiveHeader();
+    if (activeTab === 'skills') renderSkillsTab();
+    else if (activeTab === 'combat') renderCombatTab();
+    else if (activeTab === 'bank') renderBankTab();
+    else if (activeTab === 'store') renderStoreTab();
+    else if (activeTab === 'stats') renderStatsTab();
+  }
+
+  /* ── Help ────────────────────────────────────────────────────── */
+  window.IdleRealm_help = function() {
     Modal.show({
-      title: 'ℹ️ How Idle Dungeon works',
+      title: 'ℹ️ How Idle Realm works',
       body: `
-        <p>Your hero <b>auto-attacks</b> the monster. <b class="text-gold">Tap the enemy</b> for big bonus hits.</p>
-        <p class="mt-8">Each floor has <b>10 waves</b>. Wave 10 is a <b>👑 Boss</b>; clearing it advances a floor and drops gear + 💎 essence. Every 10th floor ends with a tough <b class="text-gold">🛡️ Guardian</b> that drops a rare zone <b>key</b>.</p>
-        <p class="mt-8"><b>✨ Elites</b> appear at random — tougher, but far better loot.</p>
-        <p class="mt-8"><b class="text-green">💰 Gold</b> upgrades your stats. <b>Gear</b> drops with <b class="text-accent">affixes</b> (extra bonuses like +Damage, Lifesteal or Crit) — rarer items roll more. Loot lands in your <b>🎒 Bag</b>: compare it, <b>equip</b> what fits your build, or <b>sell</b> the rest. <b>Auto-equip</b> wears clear upgrades for you, and <b>Auto-sell</b> can discard low-rarity drops automatically. <b>💎 Essence</b> enchants gear; matching all three rarities grants a <b>set bonus</b>.</p>
-        <p class="mt-8"><b>⭐ Skills</b> (unlock floor ${UNLOCK_SKILLS}) cost points earned for each new deepest floor — higher tiers need levels in the skill above them.</p>
-        <p class="mt-8"><b class="text-accent">🌟 Rebirth</b> at floor ${REBIRTH_FLOOR}+ resets your run (gold, stats, floor) for <b>Souls</b>. The deeper you reached, the more souls you earn. Spend them on repeatable <b>Soul Powers</b> and one-time milestones that make every run stronger. You must climb back up to rebirth again — so souls truly add up over time.</p>
-        <p class="mt-8">If you die you drop back a wave and lose your <b>🔥 Bloodlust</b> streak, so keep your HP up.</p>
+        <p>This is an <b>idle skiller</b>. You train <b>one action at a time</b> — pick a gathering/production task in <b>Skills</b>, or a monster in <b>Combat</b>. It keeps running while the app is closed (up to 24h).</p>
+        <p class="mt-8"><b>Gathering</b> (🪓🎣⛏️) yields raw materials. <b>Production</b> (🔥🍳🔨) turns them into goods: smelt ore → bars → <b>gear</b>, and cook fish → <b>food</b>.</p>
+        <p class="mt-8"><b>Combat</b> uses your gear and auto-eats food when hurt. Pick a <b>style</b> — Accurate (Attack), Aggressive (Strength) or Defensive (Defence) — to choose which combat skill levels. Run out of food and you retreat, so keep cooking!</p>
+        <p class="mt-8"><b>Rare drops:</b> gathering can yield uncut <b>gems</b> 🔹 (mining is best). Cut them at the forge and craft <b>📿 amulets</b> — a separate equip slot and a real build choice (Power, Accuracy, Foraging, or the dragonstone-only <b>Glory</b>).</p>
+        <p class="mt-8"><b>Synergies:</b> smithed <b>tools</b> + an Amulet of Foraging speed gathering (and boost rare drops); <b>Mining</b> level speeds Smithing; <b>Firemaking</b> + Cooking cut burning; and your <b>Cooking</b> level makes every food heal more. Everything feeds everything.</p>
+        <p class="mt-8">Every skill grinds to <b>level 99</b> on the classic curve, and loot is <b>rare</b> on purpose — this is a long game. Have fun.</p>
       `,
       actions: [{ label: 'Got it', cls: 'btn-primary' }]
     });
   };
 
-  /* ── Render ────────────────────────────────────────────────── */
-  let activeTab2   = localStorage.getItem('dn_tab') || 'stats';
-  let dnBuyAmount  = localStorage.getItem('dn_buyAmt') || '1'; // '1' | '10' | 'max'
-
-  window.DungeonGame_tab = function(tab, btn) {
-    activeTab2 = tab;
-    localStorage.setItem('dn_tab', tab);
-    document.querySelectorAll('#screen-dungeon .tab-btn').forEach(b => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
-    renderAll2();
-  };
-
-  function syncDnTabButtons() {
-    document.querySelectorAll('#screen-dungeon .tab-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.tab === activeTab2);
-    });
-  }
-
-  window.DungeonGame_setBuyAmount = function(amt) {
-    dnBuyAmount = amt;
-    localStorage.setItem('dn_buyAmt', amt);
-    renderStats();
-  };
-
-  function renderEnemy() {
-    const el = document.getElementById('dn-enemy-icon');
-    const bar = document.getElementById('dn-enemy-bar');
-    const name = document.getElementById('dn-enemy-name');
-    if (!el || !currentEnemy) return;
-    const e = currentEnemy;
-    el.textContent = e.icon;
-    el.classList.toggle('elite', !!e.isElite && !e.isBoss);
-    el.classList.toggle('guardian', !!e.isGuard);
-    const pct = Math.max(0, e.hp / e.maxHp * 100);
-    bar.style.width = pct + '%';
-    bar.className = 'progress-fill ' + (e.isBoss ? 'gold' : (e.isElite ? 'epic' : ''));
-    let tag = '';
-    if (e.isGuard)      tag = '🛡️ GUARDIAN  ';
-    else if (e.isBoss)  tag = '👑 BOSS  ';
-    else if (e.isElite) tag = '✨ ELITE  ';
-    name.textContent = tag + 'HP: ' + Fmt.format(Math.max(0,e.hp)) + ' / ' + Fmt.format(e.maxHp);
-  }
-
-  function renderCombat() {
-    const theme = themeFor(S.floor);
-    const fl = document.getElementById('dn-floor-info');
-    if (fl) {
-      let bl = '';
-      const blm = bloodlustMul(S);
-      if (blm > 1.001) bl = ` · <span style="color:var(--gold)">🔥 +${Math.round((blm-1)*100)}%</span>`;
-      fl.innerHTML = `${theme.name} · Floor ${S.floor} · Wave ${S.wave}/10${isGuardianFloor(S.floor) && S.wave===10 ? ' · <span style="color:var(--gold)">🛡️ Guardian</span>':''}${bl}`;
-    }
-    const hpEl = document.getElementById('dn-hero-hp');
-    const hpBar = document.getElementById('dn-hero-bar');
-    const maxHp = heroMaxHp(S);
-    if (hpEl) hpEl.innerHTML = Fmt.format(Math.ceil(S.hp)) + ' / ' + Fmt.format(maxHp) + ' HP <span style="color:var(--red)">· ⚔️ ' + Fmt.format(heroDps(S), 0) + ' DPS</span>';
-    if (hpBar) { hpBar.style.width = Math.max(0, S.hp / maxHp * 100) + '%'; hpBar.className = 'progress-fill green'; }
-    const goldEl = document.getElementById('dn-gold');
-    if (goldEl) {
-      let extra = '';
-      if ((S.maxFloorEver || 0) >= 1) extra += ` <span style="color:var(--accent);font-size:13px">💎 ${S.essence || 0}</span>`;
-      if (skillsUnlocked(S)) extra += ` <span style="color:var(--accent);font-size:13px">⭐ ${S.skillPoints || 0}</span>`;
-      if ((S.souls || 0) > 0) extra += ` <span style="color:var(--accent);font-size:13px">💫 ${S.souls}</span>`;
-      goldEl.innerHTML = '💰 ' + Fmt.format(S.gold) + extra;
-    }
-    // Reveal Skills tab once unlocked
-    const skBtn = document.getElementById('dn-tabbtn-skills');
-    if (skBtn) skBtn.style.display = skillsUnlocked(S) ? '' : 'none';
-    renderEnemy();
-  }
-
-  function statValue(state, id) {
-    if (id==='atk')  return heroAtk(state) + ' dmg';
-    if (id==='hp')   return heroMaxHp(state) + ' HP';
-    if (id==='crit') return heroCrit(state).toFixed(0) + '%';
-    if (id==='crit2')return heroCritDmg(state) + '%';
-    if (id==='spd')  return heroSpeed(state).toFixed(1) + '/s';
-    return '';
-  }
-
-  function renderStats() {
-    const list = document.getElementById('dn-content-area');
-    if (!list || activeTab2 !== 'stats') return;
-    // Pinned buy-amount selector
-    const bar = document.getElementById('dn-subbar');
-    if (bar) {
-      bar.style.display = 'flex';
-      const amts = [['1','×1'],['10','×10'],['max','Max']];
-      bar.innerHTML = '<span class="buy-amt-label">Buy</span>' + amts.map(([v,l]) =>
-        `<button class="buy-amt-btn ${dnBuyAmount===v?'active':''}" onclick="DungeonGame_setBuyAmount('${v}')">${l}</button>`).join('');
-    }
-    let html = `<div style="padding:10px;display:flex;flex-direction:column;gap:8px">`;
-    STAT_DEFS.forEach(def => {
-      const lvl   = S.stats[def.id];
-      const atMax = def.max !== undefined && lvl >= def.max;
-      let n = dnBuyAmount === 'max' ? statMaxAffordable(def.id, lvl, S.gold, def.max) : parseInt(dnBuyAmount);
-      if (def.max !== undefined) n = Math.min(n, def.max - lvl);
-      n = Math.max(1, n); // always show at least the next level's cost
-      const cost = statCostBulk(def.id, lvl, n);
-      const canAfford = S.gold >= cost && !atMax;
-      // Preview the value after buying n levels
-      const tmp = JSON.parse(JSON.stringify(S)); tmp.stats[def.id] += (atMax ? 0 : n);
-      const cur = statValue(S, def.id), next = statValue(tmp, def.id);
-      const preview = (!atMax && next !== cur) ? ` <span style="color:var(--green)">→ ${next}</span>` : '';
-      html += `<button class="upgrade-item ${canAfford ? 'can-buy' : 'locked'}" onclick="DungeonGame_upgradestat('${def.id}')">
-        <div class="upg-icon">${def.icon}</div>
-        <div class="upg-info">
-          <div class="upg-name">${def.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}</span></div>
-          <div style="font-size:12px;color:var(--text2)">${cur}${preview}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div class="text-gold" style="font-size:13px">${atMax ? 'MAX' : '💰 '+Fmt.format(cost)}</div>
-          <div style="font-size:11px;color:var(--green)">${atMax ? '' : '+'+n+' level'+(n>1?'s':'')}</div>
-        </div>
-      </button>`;
-    });
-    html += '</div>';
-    list.innerHTML = html;
-  }
-
-  function renderGearTab() {
-    const list = document.getElementById('dn-content-area');
-    if (!list || activeTab2 !== 'gear') return;
-    const setMul = gearSetBonus(S);
-    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:10px">';
-    // Set bonus banner
-    const setTxt = setMul >= 1.6 ? 'All Legendary — +60% all stats'
-                 : setMul > 1.2  ? 'All Epic — +35% all stats'
-                 : setMul > 1    ? 'All Rare+ — +15% all stats'
-                 : 'Match all 3 slots at the same rarity (Rare+) for a set bonus';
-    html += `<div style="background:var(--bg2);border:1px solid ${setMul>1?'var(--epic)':'var(--border)'};border-radius:var(--radius-sm);padding:10px;font-size:13px">
-      <span style="font-weight:600">🧩 Set Bonus:</span> <span style="color:${setMul>1?'var(--green)':'var(--text2)'}">${setTxt}</span>
-      <div style="font-size:12px;color:var(--text2);margin-top:4px">💎 Essence: <span class="text-accent">${S.essence || 0}</span> — enchant gear (+8% each). Items roll <b>affixes</b> (extra bonuses); pick gear that fits your build.</div>
-    </div>`;
-    // Zone-key trophies collected from Guardians
-    const keyEntries = Object.entries(S.keys || {}).filter(([,n]) => n > 0);
-    if (keyEntries.length) {
-      const keyIcons = keyEntries.map(([name,n]) => {
-        const t = FLOOR_THEMES.find(z => z.keyName === name);
-        return `<span title="${name}${n>1?' ×'+n:''}">${t?t.key:'🗝️'}${n>1?`<span style="font-size:10px">×${n}</span>`:''}</span>`;
-      }).join(' ');
-      html += `<div style="background:var(--bg2);border:1px solid var(--gold);border-radius:var(--radius-sm);padding:10px;font-size:13px">
-        <span style="font-weight:600">🗝️ Guardian Keys:</span> <span style="font-size:18px">${keyIcons}</span>
-        <div style="font-size:12px;color:var(--text2);margin-top:2px">Rare trophies dropped by Zone Guardians on floors 10, 20, 30…</div>
-      </div>`;
-    }
-    // Renders the affix line for an item (coloured by its rarity)
-    const affixLine = g => (g && g.affixes && g.affixes.length)
-      ? `<div style="font-size:11px;color:var(--accent);margin-top:1px">${g.affixes.map(a => `${affixDef(a.id).icon} ${affixText(a)}`).join('  ')}</div>` : '';
-
-    html += `<div class="menu-section-title" style="padding:4px 2px 0">Equipped</div>`;
-    GEAR_SLOTS.forEach(slot => {
-      const g = S.gear[slot];
-      const color = g ? GEAR_RARITY[g.rarity].color : 'var(--text2)';
-      const enLvl = (S.enchant && S.enchant[slot]) || 0;
-      const eff = g ? Math.floor(g.value * enchantMul(S, slot)) : 0;
-      const enCost = enLvl + 1;
-      const aff = (S.essence || 0) >= enCost;
-      html += `<div class="upgrade-item" style="border-color:${color}">
-        <div class="upg-icon" style="font-size:28px">${g ? g.icon : '❔'}</div>
-        <div class="upg-info">
-          <div class="upg-name" style="color:${color}">${g ? g.name : slot.charAt(0).toUpperCase()+slot.slice(1)+' (empty)'} ${enLvl ? `<span style="color:var(--gold);font-size:11px">+${enLvl}</span>` : ''}</div>
-          ${g ? `<div style="font-size:12px;color:var(--text2)">+${eff} ${STAT_DEFS[g.statIdx].name}${enLvl?` <span style="color:var(--text2)">(base ${g.value})</span>`:''}</div>` : '<div style="font-size:12px;color:var(--text2)">Defeat bosses to find gear</div>'}
-          ${affixLine(g)}
-        </div>
-        ${g ? `<button class="bld-level ${aff?'can-buy':'locked'}" onclick="DungeonGame_enchant('${slot}')" style="flex-shrink:0">🔨 💎${enCost}</button>` : ''}
-      </div>`;
-    });
-
-    // ── Backpack: curate your loot ──────────────────────────────
-    const inv = S.inventory || [];
-    const asLvl = S.autoSellBelow || 0;
-    html += `<div style="padding:8px 2px 0">
-        <span class="menu-section-title" style="padding:0">🎒 Bag <span style="color:var(--text2);font-weight:400">${inv.length}/${INV_CAP}</span></span>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
-          <button class="buy-amt-btn ${S.autoEquip?'active':''}" onclick="DungeonGame_toggleAutoEquip()" title="Auto-equip upgrades">⚙️ Auto-equip ${S.autoEquip?'ON':'OFF'}</button>
-          <button class="buy-amt-btn ${asLvl?'active':''}" onclick="DungeonGame_cycleAutoSell()" title="Auto-sell new drops at or below this rarity">🗑️ Auto-sell: ${AUTOSELL_LABELS[asLvl]}</button>
-          ${inv.length ? `<button class="buy-amt-btn" onclick="DungeonGame_sellJunk()">💰 Sell extras</button>` : ''}
-        </div>
-      </div>`;
-    if (!inv.length) {
-      html += `<div class="center text-muted" style="padding:14px 10px;font-size:12px">Your bag is empty. ${S.autoEquip ? 'Drops that beat your gear equip automatically; the rest land here.' : 'Auto-equip is off — every drop lands here for you to choose.'}</div>`;
-    } else {
-      // Strongest first so the best finds are easy to spot
-      const order = inv.map((g,i) => i).sort((a,b) => gearScore(inv[b]) - gearScore(inv[a]));
-      order.forEach(i => {
-        const g = inv[i];
-        const color = GEAR_RARITY[g.rarity].color;
-        const equipped = S.gear[g.slot];
-        const diff = gearScore(g) - gearScore(equipped);
-        const cmp = !equipped ? `<span style="color:var(--green)">▲ new ${g.slot}</span>`
-                  : diff > 0.5 ? `<span style="color:var(--green)">▲ upgrade</span>`
-                  : diff < -0.5 ? `<span style="color:var(--red)">▼ weaker</span>`
-                  : `<span style="color:var(--text2)">≈ similar</span>`;
-        const canEquip = !equipped || diff > 0.5;
-        html += `<div class="upgrade-item" style="border-color:${color}">
-          <div class="upg-icon" style="font-size:24px">${g.icon}</div>
-          <div class="upg-info">
-            <div class="upg-name" style="color:${color}">${g.name}</div>
-            <div style="font-size:12px;color:var(--text2)">+${g.value} ${STAT_DEFS[g.statIdx].name} · ${cmp}</div>
-            ${affixLine(g)}
-          </div>
-          <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
-            <button class="bld-level ${canEquip?'can-buy':''}" onclick="DungeonGame_equip(${i})">Equip</button>
-            <button class="bld-level" onclick="DungeonGame_sell(${i})" style="color:var(--gold)">💰${Fmt.format(sellValue(g))}</button>
-          </div>
-        </div>`;
-      });
-    }
-    html += '</div>';
-    list.innerHTML = html;
-  }
-
-  function renderSkillTab() {
-    const list = document.getElementById('dn-content-area');
-    if (!list || activeTab2 !== 'skills') return;
-    if (!skillsUnlocked(S)) {
-      list.innerHTML = `<div class="center text-muted" style="padding:30px 20px">🔒 Reach <strong>floor ${UNLOCK_SKILLS}</strong> to unlock the Skill Tree.<br><br>Highest floor so far: ${S.maxFloorEver || 0}</div>`;
-      return;
-    }
-    const branches = {};
-    SKILLS.forEach(s => { (branches[s.branch] = branches[s.branch] || []).push(s); });
-    let html = `<div style="padding:10px;display:flex;flex-direction:column;gap:8px">
-      <div style="font-size:13px">⭐ Skill Points: <span class="text-accent" style="font-weight:700">${S.skillPoints || 0}</span>
-      <span style="color:var(--text2);font-size:12px"> · earn 1 per new deepest floor. Higher tiers need points in the skill above.</span></div>`;
-    Object.keys(branches).forEach(br => {
-      html += `<div class="menu-section-title" style="padding:6px 2px 2px">${br}</div>`;
-      branches[br].forEach(sk => {
-        const lvl = skillLvl(S, sk.id);
-        const maxed = lvl >= sk.max;
-        const reqMet = skillReqMet(sk);
-        const aff = (S.skillPoints || 0) >= sk.cost && reqMet && !maxed;
-        const reqSk = sk.req ? SKILLS.find(s => s.id === sk.req) : null;
-        // Preview shows current level's effect, or the first level's if unbought
-        const descLvl = maxed ? lvl : Math.max(lvl, 1);
-        const cls = maxed ? '' : (aff ? 'can-buy' : 'locked');
-        html += `<button class="upgrade-item ${cls}" ${maxed ? '' : `onclick="DungeonGame_buySkill('${sk.id}')"`} style="${lvl>0&&!aff?'border-color:var(--accent)':''}">
-          <div class="upg-icon">${sk.icon}</div>
-          <div class="upg-info">
-            <div class="upg-name">${sk.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}/${sk.max}</span></div>
-            <div style="font-size:12px;color:var(--text2)">${sk.desc(descLvl)}${!maxed && lvl>0 ? ` <span style="color:var(--green)">→ ${sk.desc(lvl+1)}</span>` : ''}</div>
-            ${!reqMet ? `<div class="ach-hint" style="color:var(--text2)">🔒 Needs ${reqSk?reqSk.name:'previous skill'} Lv.${sk.reqLvl||1}</div>` : ''}
-          </div>
-          <div class="text-accent" style="font-size:13px;font-weight:600;flex-shrink:0">${maxed ? 'MAX' : '⭐ ' + sk.cost}</div>
-        </button>`;
-      });
-    });
-    html += '</div>';
-    list.innerHTML = html;
-  }
-
-  function renderSoulTab() {
-    const list = document.getElementById('dn-content-area');
-    if (!list || activeTab2 !== 'soul') return;
-    const canRebirth = S.maxFloor >= REBIRTH_FLOOR;
-    const reward = soulsForFloor(S.maxFloor);
-    let html = `<div style="padding:10px;display:flex;flex-direction:column;gap:10px">
-      <div style="background:var(--bg2);border:1px solid ${canRebirth?'var(--accent)':'var(--border)'};border-radius:var(--radius-sm);padding:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-size:15px;font-weight:600">🌟 Rebirth</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:2px">Reset gold, stats & floor — keep gear, skills & souls</div>
-            <div style="font-size:12px;color:var(--text2)">This run's max floor: <b>${S.maxFloor}</b> · Rebirths: ${S.rebirths}</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:13px;color:var(--accent)">💫 ${S.souls} Souls</div>
-            <div style="font-size:12px;color:var(--text2)">earned ${Fmt.format(S.allTimeSouls||0)} total</div>
-          </div>
-        </div>
-        <button class="btn btn-primary mt-8" style="${canRebirth?'':'opacity:0.5'}" onclick="DungeonGame_rebirth()">
-          ${canRebirth ? `🌟 Rebirth for +${reward} Souls` : `🔒 Reach floor ${REBIRTH_FLOOR} this run`}
-        </button>
-        <div style="font-size:11px;color:var(--text2);margin-top:6px">Souls scale with depth — push past floor ${S.maxFloor || REBIRTH_FLOOR} next run for a bigger payout.</div>
-      </div>`;
-
-    // Repeatable soul tracks — a permanent sink so souls always matter
-    html += '<div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;padding:4px 2px">Soul Powers · repeatable</div>';
-    SOUL_TRACKS.forEach(t => {
-      const lvl  = soulTrackLvl(S, t.id);
-      const cost = soulTrackCost(t, lvl);
-      const aff  = (S.souls || 0) >= cost;
-      html += `<button class="upgrade-item ${aff?'can-buy':'locked'}" onclick="DungeonGame_buySoulTrack('${t.id}')">
-        <div class="upg-icon">${t.icon}</div>
-        <div class="upg-info">
-          <div class="upg-name">${t.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}</span></div>
-          <div style="font-size:12px;color:var(--text2)">${t.fmt(lvl)} <span style="color:var(--green)">→ ${t.fmt(lvl+1)}</span></div>
-        </div>
-        <div class="text-accent" style="font-size:13px;font-weight:600;flex-shrink:0">💫 ${cost}</div>
-      </button>`;
-    });
-
-    html += '<div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;padding:8px 2px 4px">Soul Milestones · one-time</div>';
-    SOUL_UPGRADES.forEach(u => {
-      const bought = S.soulUpgrades[u.id];
-      const canAfford = S.souls >= u.cost && !bought;
-      html += `<button class="upgrade-item ${bought?'':(canAfford?'can-buy':'locked')}" onclick="DungeonGame_buySoulUpgrade('${u.id}')">
-        <div class="upg-icon">${u.icon}</div>
-        <div class="upg-info">
-          <div class="upg-name">${u.name} ${bought?'<span style="color:var(--green);font-size:12px">✓</span>':''}</div>
-          <div style="font-size:12px;color:var(--text2)">${u.desc}</div>
-        </div>
-        <div class="text-accent" style="font-size:13px;font-weight:600;flex-shrink:0">${bought?'Owned':'💫 '+u.cost}</div>
-      </button>`;
-    });
-    html += '</div>';
-    list.innerHTML = html;
-  }
-
-  function renderFloorTab() {
-    const list = document.getElementById('dn-content-area');
-    if (!list || activeTab2 !== 'floors') return;
-    let html = `<div style="padding:10px;display:flex;flex-direction:column;gap:6px">
-      <div style="font-size:12px;color:var(--text2);padding:0 2px 4px">Jump to any cleared floor. Each zone spans 10 floors and ends with a <span style="color:var(--gold)">🛡️ Guardian</span> that drops a key.</div>`;
-    const max = Math.max(S.maxFloor + 1, S.floor);
-    let lastZone = -1;
-    for (let f = 1; f <= max; f++) {
-      const theme = themeFor(f);
-      const zi = zoneIndex(f);
-      if (zi !== lastZone) {
-        lastZone = zi;
-        html += `<div class="menu-section-title" style="padding:8px 2px 2px">${theme.key} ${theme.name} <span style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0">— ${theme.tip}</span></div>`;
-      }
-      const isCurrent = f === S.floor;
-      const isLocked  = f > S.maxFloor + 1;
-      const guard     = isGuardianFloor(f);
-      const icon      = guard ? (theme.guardian||theme.boss) : theme.enemies[f % theme.enemies.length];
-      html += `<button class="upgrade-item ${isLocked?'locked':''}" onclick="DungeonGame_setFloor(${f})"
-        style="${isCurrent?'border-color:var(--accent)':(guard?'border-color:var(--gold)':'')}">
-        <div class="upg-icon">${icon}</div>
-        <div class="upg-info">
-          <div class="upg-name">Floor ${f} — ${theme.name}${guard?' <span style="color:var(--gold);font-size:11px">🛡️ Guardian</span>':''}</div>
-          <div style="font-size:12px;color:var(--text2)">${isLocked?'🔒 Clear previous floor':(guard?`Drops the ${theme.key} ${theme.keyName}`:'Boss at wave 10: '+theme.boss)}</div>
-        </div>
-        ${isCurrent?'<div style="color:var(--accent);font-size:12px">Now</div>':''}
-      </button>`;
-    }
-    html += '</div>';
-    list.innerHTML = html;
-  }
-
-  function renderAll2() {
-    if (!S) return;
-    // Don't open on the Skills tab before it's unlocked
-    if (activeTab2 === 'skills' && !skillsUnlocked(S)) { activeTab2 = 'stats'; syncDnTabButtons(); }
-    renderCombat();
-    // Buy-amount sub-bar only applies to the Stats tab
-    const bar = document.getElementById('dn-subbar');
-    if (bar && activeTab2 !== 'stats') bar.style.display = 'none';
-    if (activeTab2 === 'stats')  renderStats();
-    else if (activeTab2 === 'gear')   renderGearTab();
-    else if (activeTab2 === 'skills') renderSkillTab();
-    else if (activeTab2 === 'soul')   renderSoulTab();
-    else if (activeTab2 === 'floors') renderFloorTab();
-  }
-
-  /* ── Build UI ──────────────────────────────────────────────── */
+  /* ── Build UI ────────────────────────────────────────────────── */
   function buildUI() {
     const el = document.getElementById('screen-dungeon');
     el.innerHTML = `
       <style>
-        #dn-main { display:flex; flex-direction:column; height:100%; }
-        #dn-combat-zone {
-          flex-shrink:0; padding:14px; background:var(--bg2);
-          border-bottom:1px solid var(--border);
-        }
-        #dn-floor-info { font-size:12px; color:var(--text2); margin-bottom:8px; }
-        #dn-gold { font-size:14px; font-weight:700; margin-bottom:10px; }
-        #dn-enemy-area {
-          display:flex; flex-direction:column; align-items:center;
-          gap:6px; padding:10px 0;
-        }
-        #dn-enemy-icon {
-          font-size:72px; line-height:1;
-          cursor:pointer; transition:transform 0.07s;
-          filter:drop-shadow(0 2px 8px rgba(0,0,0,0.5));
-        }
-        #dn-enemy-icon:active { transform:scale(0.9); }
-        #dn-enemy-icon.elite    { filter:drop-shadow(0 0 10px var(--epic)); animation:dn-pulse 1.1s ease-in-out infinite alternate; }
-        #dn-enemy-icon.guardian { filter:drop-shadow(0 0 14px var(--gold)); animation:dn-pulse 0.8s ease-in-out infinite alternate; }
-        @keyframes dn-pulse { from { transform:scale(1); } to { transform:scale(1.08); } }
-        #dn-enemy-name { font-size:12px; color:var(--text2); }
-        #screen-dungeon .progress-fill.epic { background:var(--epic); }
-        .dn-bar-wrap { width:100%; }
-        #dn-hero-info { display:flex; flex-direction:column; align-items:stretch; gap:4px; margin-top:10px; font-size:13px; }
-        #dn-hero-hp { color:var(--text2); font-size:12px; }
-        #dn-content { flex:1; display:flex; flex-direction:column; min-height:0; }
-        #dn-content-area { flex:1; overflow-y:auto; }
-        #dn-subbar { display:none; align-items:center; gap:6px; padding:8px 10px;
-                     background:var(--bg2); border-bottom:1px solid var(--border); flex-shrink:0; }
-        #screen-dungeon .buy-amt-label { font-size:12px; color:var(--text2); margin-right:2px; }
-        #screen-dungeon .buy-amt-btn { padding:4px 12px; border-radius:var(--radius-sm); font-size:13px; font-weight:600;
-                       background:var(--bg3); border:1px solid var(--border); color:var(--text2); }
+        #rl-main { display:flex; flex-direction:column; height:100%; }
+        #rl-head { flex-shrink:0; padding:12px 14px; background:var(--bg2); border-bottom:1px solid var(--border); }
+        #rl-topbar { font-size:14px; margin-bottom:8px; }
+        #rl-active { min-height:60px; }
+        #rl-content-wrap { flex:1; display:flex; flex-direction:column; min-height:0; }
+        #rl-content { flex:1; overflow-y:auto; }
+        #screen-dungeon .buy-amt-btn { padding:5px 10px; border-radius:var(--radius-sm); font-size:12px; font-weight:600; background:var(--bg3); border:1px solid var(--border); color:var(--text2); }
         #screen-dungeon .buy-amt-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
         #screen-dungeon .upgrade-item.can-buy { border-color:var(--green); }
         #screen-dungeon .upgrade-item.can-buy:active { border-color:var(--accent); }
         #screen-dungeon .bld-level { padding:4px 9px; margin-left:0; }
         #screen-dungeon .bld-level.can-buy { border-color:var(--green); color:var(--green); }
-        #screen-dungeon .bld-level.can-buy:active { border-color:var(--accent); }
       </style>
-      <div id="dn-main" style="position:relative">
-        <div id="dn-combat-zone">
-          <div id="dn-floor-info"></div>
-          <div id="dn-gold"></div>
-          <div id="dn-enemy-area">
-            <span id="dn-enemy-icon" onclick="DungeonGame_tap(event)"></span>
-            <div id="dn-enemy-name"></div>
-            <div class="dn-bar-wrap">
-              <div class="progress-bar"><div id="dn-enemy-bar" class="progress-fill" style="width:100%"></div></div>
-            </div>
-          </div>
-          <div id="dn-hero-info">
-            <span id="dn-hero-hp"></span>
-            <div class="progress-bar" style="height:8px"><div id="dn-hero-bar" class="progress-fill green" style="width:100%"></div></div>
-          </div>
+      <div id="rl-main">
+        <div id="rl-head">
+          <div id="rl-topbar"></div>
+          <div id="rl-active"></div>
         </div>
-        <div id="dn-content">
+        <div id="rl-content-wrap">
           <div class="tab-bar" style="overflow-x:auto;white-space:nowrap;display:flex">
-            <button class="tab-btn" data-tab="stats"  style="min-width:70px" onclick="DungeonGame_tab('stats',this)">Stats</button>
-            <button class="tab-btn" data-tab="gear"   style="min-width:70px" onclick="DungeonGame_tab('gear',this)">Gear</button>
-            <button id="dn-tabbtn-skills" class="tab-btn" data-tab="skills" style="min-width:78px;display:none" onclick="DungeonGame_tab('skills',this)">⭐ Skills</button>
-            <button class="tab-btn" data-tab="floors" style="min-width:70px" onclick="DungeonGame_tab('floors',this)">Floors</button>
-            <button class="tab-btn" data-tab="soul"   style="min-width:70px" onclick="DungeonGame_tab('soul',this)">Soul</button>
+            <button class="tab-btn" data-tab="skills" style="min-width:72px" onclick="IdleRealm_tab('skills',this)">🛠️ Skills</button>
+            <button class="tab-btn" data-tab="combat" style="min-width:72px" onclick="IdleRealm_tab('combat',this)">⚔️ Combat</button>
+            <button class="tab-btn" data-tab="bank"   style="min-width:64px" onclick="IdleRealm_tab('bank',this)">🎒 Bank</button>
+            <button class="tab-btn" data-tab="store"  style="min-width:64px" onclick="IdleRealm_tab('store',this)">🛒 Store</button>
+            <button class="tab-btn" data-tab="stats"  style="min-width:64px" onclick="IdleRealm_tab('stats',this)">📊 Stats</button>
           </div>
-          <div id="dn-subbar"></div>
-          <div id="dn-content-area"></div>
+          <div id="rl-content"></div>
         </div>
       </div>`;
   }
 
-  /* ── Tick ──────────────────────────────────────────────────── */
-  let renderThrottle2 = 0;
-  tickFn = function(dt) {
-    if (!S || !currentEnemy) return;
-    // Regeneration skill
-    const rg = skillLvl(S, 'k_regen');
-    if (rg) S.hp = Math.min(heroMaxHp(S), S.hp + heroMaxHp(S) * 0.015 * rg * dt);
-    combatTimer += dt;
-    const spd = 1 / heroSpeed(S);
-    while (combatTimer >= spd) {
-      combatTimer -= spd;
-      resolveHit();
-    }
-    renderThrottle2 += dt;
-    if (renderThrottle2 >= 0.25) {
-      renderThrottle2 = 0;
-      if (document.getElementById('screen-dungeon').classList.contains('active')) {
-        renderCombat();
-        if (activeTab2 === 'stats') renderStats();
-      }
-    }
-  };
-
-  /* ── Register ──────────────────────────────────────────────── */
+  /* ── Register with Router ────────────────────────────────────── */
   Router.register('dungeon', {
-    title: '⚔️ Idle Dungeon',
-    onHelp: () => DungeonGame_help(),
+    title: '⚔️ Idle Realm',
+    onHelp: () => IdleRealm_help(),
     onEnter: () => {
       loadGame();
       buildUI();
       registerAchievements();
-      syncDnTabButtons();
-      spawnEnemy();
-      renderAll2();
+      syncTabButtons();
+      checkAchievements();
+      renderAll();
       Ticker.add(tickFn);
       autosaveTimer = setInterval(() => saveGame(), AUTOSAVE_MS);
     },
@@ -1348,13 +951,10 @@
       saveGame();
       Ticker.remove(tickFn);
       clearInterval(autosaveTimer);
-      currentEnemy = null;
     }
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && document.getElementById('screen-dungeon')?.classList.contains('active')) {
-      saveGame();
-    }
+    if (document.hidden && document.getElementById('screen-dungeon')?.classList.contains('active')) saveGame();
   });
-})(); // end DungeonGame
+})(); // end IdleRealm
