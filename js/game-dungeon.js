@@ -85,8 +85,23 @@
     tool_iron:     { name:'Iron Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:2, speed:0.16, value:180 },
     tool_steel:    { name:'Steel Toolkit',    icon:'🛠️', type:'gear', slot:'tool',   tier:3, speed:0.26, value:480 },
     tool_mithril:  { name:'Mithril Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:4, speed:0.40, value:1300 },
-    // a genuinely rare combat drop
-    gem_dragon:    { name:'Dragonstone',      icon:'💎', type:'treasure', value:5000 },
+    // uncut gems — rare gathering drops
+    usapphire:   { name:'Uncut Sapphire', icon:'🔹', type:'uncut', value:60 },
+    uemerald:    { name:'Uncut Emerald',  icon:'🟢', type:'uncut', value:120 },
+    uruby:       { name:'Uncut Ruby',     icon:'🔻', type:'uncut', value:240 },
+    udiamond:    { name:'Uncut Diamond',  icon:'🔸', type:'uncut', value:600 },
+    gem_dragon:  { name:'Dragonstone',    icon:'💎', type:'uncut', value:5000 }, // rare combat drop
+    // cut gems
+    sapphire:    { name:'Sapphire', icon:'🔹', type:'gem', value:140 },
+    emerald:     { name:'Emerald',  icon:'🟢', type:'gem', value:280 },
+    ruby:        { name:'Ruby',     icon:'🔻', type:'gem', value:560 },
+    diamond:     { name:'Diamond',  icon:'🔸', type:'gem', value:1400 },
+    // amulets (equip slot 'amulet') — build choices, equipped manually
+    amulet_sapphire:{ name:'Amulet of Accuracy', icon:'📿', type:'gear', slot:'amulet', tier:1, acc:12,            value:400 },
+    amulet_ruby:    { name:'Amulet of Power',    icon:'📿', type:'gear', slot:'amulet', tier:2, str:14,            value:900 },
+    amulet_emerald: { name:'Amulet of Foraging', icon:'📿', type:'gear', slot:'amulet', tier:2, gspeed:0.15, rare:0.5, value:900 },
+    amulet_diamond: { name:'Amulet of Skill',    icon:'📿', type:'gear', slot:'amulet', tier:3, acc:12, str:12, rare:0.3, value:2400 },
+    amulet_glory:   { name:'Amulet of Glory',    icon:'🏵️', type:'gear', slot:'amulet', tier:4, acc:22, str:22, rare:0.6, value:8000 },
   };
   function itemName(id) { return (ITEMS[id] || {}).name || id; }
   function itemIcon(id) { return (ITEMS[id] || {}).icon || '❔'; }
@@ -141,8 +156,31 @@
     { id:'fg_weapon_mithril',skill:'smithing', name:'Forge Mithril Sword',   icon:'⚔️', lvl:58, xp:130, time:5.2, inputs:{ bar_mithril:1 }, output:'weapon_mithril' },
     { id:'fg_tool_mithril',  skill:'smithing', name:'Forge Mithril Toolkit', icon:'🛠️', lvl:60, xp:200, time:5.2, inputs:{ bar_mithril:2 }, output:'tool_mithril' },
     { id:'fg_armor_mithril', skill:'smithing', name:'Forge Mithril Platebody',icon:'🛡️',lvl:63, xp:260, time:5.6, inputs:{ bar_mithril:3 }, output:'armor_mithril' },
+    // Smithing — cut gems
+    { id:'cut_sapphire', skill:'smithing', name:'Cut Sapphire', icon:'🔹', lvl:20, xp:50,  time:3.0, inputs:{ usapphire:1 }, output:'sapphire' },
+    { id:'cut_emerald',  skill:'smithing', name:'Cut Emerald',  icon:'🟢', lvl:27, xp:67,  time:3.2, inputs:{ uemerald:1 },  output:'emerald' },
+    { id:'cut_ruby',     skill:'smithing', name:'Cut Ruby',     icon:'🔻', lvl:34, xp:85,  time:3.4, inputs:{ uruby:1 },     output:'ruby' },
+    { id:'cut_diamond',  skill:'smithing', name:'Cut Diamond',  icon:'🔸', lvl:43, xp:108, time:3.6, inputs:{ udiamond:1 },  output:'diamond' },
+    // Smithing — craft amulets (gem + bar). The dragonstone makes the best-in-slot Glory.
+    { id:'amu_acc',   skill:'smithing', name:'Craft Amulet of Accuracy', icon:'📿', lvl:22, xp:90,  time:4.5, inputs:{ sapphire:1, bar_iron:1 },   output:'amulet_sapphire' },
+    { id:'amu_forage',skill:'smithing', name:'Craft Amulet of Foraging', icon:'📿', lvl:30, xp:140, time:4.8, inputs:{ emerald:1, bar_steel:1 },   output:'amulet_emerald' },
+    { id:'amu_power', skill:'smithing', name:'Craft Amulet of Power',    icon:'📿', lvl:36, xp:170, time:4.8, inputs:{ ruby:1, bar_steel:1 },      output:'amulet_ruby' },
+    { id:'amu_skill', skill:'smithing', name:'Craft Amulet of Skill',    icon:'📿', lvl:46, xp:230, time:5.2, inputs:{ diamond:1, bar_mithril:1 }, output:'amulet_diamond' },
+    { id:'amu_glory', skill:'smithing', name:'Craft Amulet of Glory',    icon:'🏵️', lvl:60, xp:500, time:6.0, inputs:{ gem_dragon:1, bar_mithril:1 }, output:'amulet_glory' },
   ];
   const ACTION = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
+  // Rare gem drop tables for gathering (mult scales the base rate by node).
+  const gemTable = mult => [
+    { item:'usapphire', chance:0.0040 * mult },
+    { item:'uemerald',  chance:0.0016 * mult },
+    { item:'uruby',     chance:0.0007 * mult },
+    { item:'udiamond',  chance:0.00025 * mult },
+  ];
+  // Mining is the prime gem source; woodcutting/fishing only rarely (bird nests / oysters)
+  [['mn_copper',1],['mn_tin',1],['mn_iron',1.4],['mn_coal',1.8],['mn_mithril',2.6],
+   ['wc_normal',0.4],['wc_oak',0.5],['wc_willow',0.6],['wc_maple',0.7],
+   ['fs_shrimp',0.4],['fs_trout',0.5],['fs_salmon',0.6],['fs_lobster',0.7],['fs_sword',0.8]]
+    .forEach(([id, mult]) => { if (ACTION[id]) ACTION[id].rare = gemTable(mult); });
 
   /* ── Monsters (combat). reqCb gates by combat level. ──────────── */
   const MONSTERS = [
@@ -173,7 +211,7 @@
       schema:      'realm',          // marker: distinguishes the reworked save
       skillsXp,
       bank:        { coins: 25 },
-      equip:       { weapon: null, armor: null, tool: null },
+      equip:       { weapon: null, armor: null, tool: null, amulet: null },
       action:      null,             // { type:'skill', id } | { type:'combat', id }
       combatStyle: 'attack',         // attack | strength | defence (Accurate/Aggressive/Defensive)
       maxCombat:   0,
@@ -220,17 +258,21 @@
   //  - mining level speeds Smithing; firemaking level cuts cooking burn.
   function actionEffTime(a) {
     let bonusPct = Math.min(0.30, skillLevel(a.skill) * 0.0025);   // up to -30% from level
-    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed();
+    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + bonus('amulet', 'gspeed');
     if (a.skill === 'smithing') bonusPct += Math.min(0.20, skillLevel('mining') * 0.002); // mining→smithing synergy
     return Math.max(0.4, a.time * (1 - Math.min(0.6, bonusPct)));
   }
   function cookBurnChance(a) {
     return Math.max(0, a.burn - skillLevel('cooking') * 0.01 - skillLevel('firemaking') * 0.003);
   }
+  // Rare-drop multiplier: Amulet of Foraging/Skill/Glory boost gem chances.
+  function rareBonus() { return 1 + bonus('amulet', 'rare'); }
+  // Cooking synergy: food heals more the higher your Cooking level (+0.5%/level).
+  function foodHeal(id) { return Math.floor((ITEMS[id].heal || 0) * (1 + 0.005 * skillLevel('cooking'))); }
 
   /* ── Combat math ─────────────────────────────────────────────── */
-  function playerMaxHit() { return Math.floor(2 + (skillLevel('strength') + bonus('weapon', 'str')) * 0.22); }
-  function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + bonus('weapon', 'acc') / 48); }
+  function playerMaxHit() { return Math.floor(2 + (skillLevel('strength') + bonus('weapon', 'str') + bonus('amulet', 'str')) * 0.22); }
+  function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + (bonus('weapon', 'acc') + bonus('amulet', 'acc')) / 48); }
   function playerDefRoll() { return (skillLevel('defence') + bonus('armor', 'def') + 8); }
   function hitChance(atkRoll, defRoll) { return atkRoll / (atkRoll + defRoll); }
   function playerDps(m) {
@@ -273,15 +315,32 @@
     }
     if (a.output) {
       const burned = a.burn && Math.random() < cookBurnChance(a);
-      if (!burned) { bankAdd(a.output, 1); addXp(a.skill, a.xp); maybeAutoEquip(a.output); }
-      else { addXp(a.skill, Math.floor(a.xp * 0.3)); Toast.show('💢', 'Burnt!', 'Ruined a ' + itemName(a.output)); }
+      if (!burned) {
+        bankAdd(a.output, 1); addXp(a.skill, a.xp); maybeAutoEquip(a.output);
+        const ot = ITEMS[a.output] && ITEMS[a.output].type;
+        if (ot === 'gem') AchievementSystem.unlock('r_gem');
+        if (ITEMS[a.output] && ITEMS[a.output].slot === 'amulet') AchievementSystem.unlock('r_amulet');
+        if (a.output === 'amulet_glory') AchievementSystem.unlock('r_glory');
+      } else { addXp(a.skill, Math.floor(a.xp * 0.3)); Toast.show('💢', 'Burnt!', 'Ruined a ' + itemName(a.output)); }
     } else if (a.item) {
       bankAdd(a.item, 1); addXp(a.skill, a.xp);
+      rollRareDrops(a);
     } else {
       addXp(a.skill, a.xp); // firemaking: xp only
     }
     S.actionsDone++;
     return true;
+  }
+  // Roll an action's rare gem table (with amulet bonus); announce finds.
+  function rollRareDrops(a, quiet) {
+    if (!a.rare) return;
+    for (const r of a.rare) {
+      if (Math.random() < r.chance * rareBonus()) {
+        bankAdd(r.item, 1);
+        AchievementSystem.unlock('r_uncut');
+        if (!quiet) Toast.show(itemIcon(r.item), 'Rare find!', 'You found an ' + itemName(r.item) + '!', true);
+      }
+    }
   }
 
   function bestFood() {
@@ -294,7 +353,7 @@
   }
   function autoEat() {
     const f = bestFood(); if (!f) return false;
-    bankRemove(f, 1); cmb.php = Math.min(maxHp(), cmb.php + ITEMS[f].heal);
+    bankRemove(f, 1); cmb.php = Math.min(maxHp(), cmb.php + foodHeal(f));
     return true;
   }
 
@@ -376,6 +435,7 @@
   /* ── Equipment actions ───────────────────────────────────────── */
   function maybeAutoEquip(id) {
     const it = ITEMS[id]; if (!it || it.type !== 'gear') return;
+    if (it.slot === 'amulet') return; // amulets are a build choice — equip manually
     const cur = equippedItem(it.slot);
     if (!cur || (it.tier || 0) > (cur.tier || 0)) S.equip[it.slot] = id;
   }
@@ -408,6 +468,10 @@
     AchievementSystem.register('r_99',      '🌟','Maxed a Skill',   'Reach level 99 in any skill.', 'Grind to 99');
     AchievementSystem.register('r_rare',    '💎','Lucky',           'Receive a rare monster drop.', 'Fight tough monsters');
     AchievementSystem.register('r_mith',    '🔵','Mithril Smith',   'Forge any Mithril gear.',      'Smith at level 58+');
+    AchievementSystem.register('r_uncut',   '🔹','Gem in the Rough', 'Find an uncut gem while gathering.', 'Gather a lot — gems are rare');
+    AchievementSystem.register('r_gem',     '💍','Lapidary',        'Cut a gem.',                   'Find then cut a gem');
+    AchievementSystem.register('r_amulet',  '📿','Jeweller',        'Craft an amulet.',             'Cut a gem, then craft');
+    AchievementSystem.register('r_glory',   '🏵️','For Glory',        'Craft the Amulet of Glory.',   'Needs a Dragonstone');
   }
   function checkAchievements() {
     if (S.kills >= 10)  AchievementSystem.unlock('r_kill10');
@@ -447,7 +511,7 @@
             for (let i = 0; i < cycles; i++) {
               if (a.inputs) { if (!hasInputs(a.inputs)) break; spendInputs(a.inputs); }
               if (a.output) { const burn = a.burn && Math.random() < cookBurnChance(a); if (!burn) { bankAdd(a.output, 1); made++; xp += a.xp; } else xp += Math.floor(a.xp * 0.3); }
-              else if (a.item) { bankAdd(a.item, 1); made++; xp += a.xp; }
+              else if (a.item) { bankAdd(a.item, 1); made++; xp += a.xp; rollRareDrops(a, true); }
               else { xp += a.xp; made++; }
             }
             d.skillsXp[a.skill] = (d.skillsXp[a.skill] || 0) + xp;
@@ -462,8 +526,8 @@
           let kills = Math.floor(elapsed / ttk);
           // sustain: cap by food healing vs damage taken
           const dmgPerSec = (m.maxHit / 2) * hitChance(m.acc + 8, playerDefRoll()) / m.interval;
-          let foodHeal = 0; Object.keys(d.bank).forEach(id => { const it = ITEMS[id]; if (it && it.type === 'food') foodHeal += it.heal * bankCount(id); });
-          const sustainSecs = (maxHp() + foodHeal) / Math.max(0.01, dmgPerSec);
+          let foodPool = 0; Object.keys(d.bank).forEach(id => { const it = ITEMS[id]; if (it && it.type === 'food') foodPool += foodHeal(id) * bankCount(id); });
+          const sustainSecs = (maxHp() + foodPool) / Math.max(0.01, dmgPerSec);
           if (sustainSecs < elapsed) kills = Math.min(kills, Math.floor(sustainSecs / ttk));
           if (kills > 0) {
             const sx = m.xp * kills, hx = Math.round(m.xp * 0.33) * kills;
@@ -475,7 +539,7 @@
             // consume the food that was used (cheapest first)
             let need = Math.max(0, dmgPerSec * Math.min(elapsed, kills * ttk) - maxHp());
             const foods = Object.keys(d.bank).filter(id => ITEMS[id] && ITEMS[id].type === 'food').sort((a, b) => ITEMS[a].heal - ITEMS[b].heal);
-            for (const fid of foods) { while (need > 0 && bankCount(fid) > 0) { bankRemove(fid, 1); need -= ITEMS[fid].heal; } }
+            for (const fid of foods) { while (need > 0 && bankCount(fid) > 0) { bankRemove(fid, 1); need -= foodHeal(fid); } }
             d.kills = (d.kills || 0) + kills;
             summary = `Combat: ${Fmt.format(kills)} kills · +${Fmt.format(sx)} ${styleName()} XP · +${Fmt.format(coins)} 🪙`;
           }
@@ -503,7 +567,7 @@
       S = defaultState();
     }
     S.bank  = S.bank || { coins: 25 };
-    S.equip = Object.assign({ weapon: null, armor: null, tool: null }, S.equip || {});
+    S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null }, S.equip || {});
     if (!S.skillsXp) S.skillsXp = defaultState().skillsXp;
     SKILLS.forEach(s => { if (typeof S.skillsXp[s.id] !== 'number') S.skillsXp[s.id] = (s.id === 'hitpoints' ? xpForLevel(10) : 0); });
     progress = 0; cmb = null;
@@ -679,8 +743,13 @@
       const isGear = it.type === 'gear';
       const equipped = isGear && S.equip[it.slot] === id;
       let sub = '';
-      if (isGear) sub = it.slot === 'weapon' ? `+${it.acc} acc / +${it.str} str` : it.slot === 'armor' ? `+${it.def} def` : `+${Math.round(it.speed * 100)}% gather`;
-      else if (it.type === 'food') sub = `heals ${it.heal}`;
+      if (isGear) {
+        if (it.slot === 'weapon') sub = `+${it.acc} acc / +${it.str} str`;
+        else if (it.slot === 'armor') sub = `+${it.def} def`;
+        else if (it.slot === 'tool') sub = `+${Math.round(it.speed * 100)}% gather`;
+        else if (it.slot === 'amulet') sub = [it.acc?`+${it.acc} acc`:'', it.str?`+${it.str} str`:'', it.gspeed?`+${Math.round(it.gspeed*100)}% gather`:'', it.rare?`+${Math.round(it.rare*100)}% rare drops`:''].filter(Boolean).join(', ');
+      }
+      else if (it.type === 'food') sub = `heals ${foodHeal(id)}`;
       else if (id !== 'coins') sub = `${it.value || 1} ea`;
       html += `<div class="upgrade-item" style="${equipped ? 'border-color:var(--accent)' : ''}">
           <div class="upg-icon">${it.icon}</div>
@@ -700,7 +769,7 @@
     const list = document.getElementById('rl-content');
     if (!list || activeTab !== 'stats') return;
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:8px">';
-    const eq = ['weapon', 'armor', 'tool'].map(sl => { const it = equippedItem(sl); return `${sl}: ${it ? it.icon + ' ' + it.name : '—'}`; }).join(' · ');
+    const eq = ['weapon', 'armor', 'tool', 'amulet'].map(sl => { const it = equippedItem(sl); return `${sl}: ${it ? it.icon + ' ' + it.name : '—'}`; }).join(' · ');
     html += `<div style="font-size:12px;color:var(--text2)">Equipped — ${eq}</div>`;
     html += `<div class="stat-row"><span class="text-muted">Combat level</span><span class="text-accent">${combatLevel()}</span></div>`;
     html += `<div class="stat-row"><span class="text-muted">Total level</span><span>${totalLevel()} / ${SKILLS.length * 99}</span></div>`;
@@ -733,7 +802,8 @@
         <p>This is an <b>idle skiller</b>. You train <b>one action at a time</b> — pick a gathering/production task in <b>Skills</b>, or a monster in <b>Combat</b>. It keeps running while the app is closed (up to 24h).</p>
         <p class="mt-8"><b>Gathering</b> (🪓🎣⛏️) yields raw materials. <b>Production</b> (🔥🍳🔨) turns them into goods: smelt ore → bars → <b>gear</b>, and cook fish → <b>food</b>.</p>
         <p class="mt-8"><b>Combat</b> uses your gear and auto-eats food when hurt. Pick a <b>style</b> — Accurate (Attack), Aggressive (Strength) or Defensive (Defence) — to choose which combat skill levels. Run out of food and you retreat, so keep cooking!</p>
-        <p class="mt-8"><b>Synergies:</b> smithed <b>tools</b> speed up gathering, your <b>Mining</b> level speeds Smithing, and <b>Firemaking</b> + Cooking levels reduce burning. Everything feeds everything.</p>
+        <p class="mt-8"><b>Rare drops:</b> gathering can yield uncut <b>gems</b> 🔹 (mining is best). Cut them at the forge and craft <b>📿 amulets</b> — a separate equip slot and a real build choice (Power, Accuracy, Foraging, or the dragonstone-only <b>Glory</b>).</p>
+        <p class="mt-8"><b>Synergies:</b> smithed <b>tools</b> + an Amulet of Foraging speed gathering (and boost rare drops); <b>Mining</b> level speeds Smithing; <b>Firemaking</b> + Cooking cut burning; and your <b>Cooking</b> level makes every food heal more. Everything feeds everything.</p>
         <p class="mt-8">Every skill grinds to <b>level 99</b> on the classic curve, and loot is <b>rare</b> on purpose — this is a long game. Have fun.</p>
       `,
       actions: [{ label: 'Got it', cls: 'btn-primary' }]
