@@ -608,6 +608,8 @@ const Modal = (() => {
   const titleEl = document.getElementById('modal-title');
   const bodyEl  = document.getElementById('modal-body');
   const actionsEl = document.getElementById('modal-actions');
+  let openedAt = 0;
+  function isOpen() { return overlay.classList.contains('open'); }
   function show({ title, body, actions = [] }) {
     titleEl.textContent = title;
     bodyEl.innerHTML = body;
@@ -620,10 +622,14 @@ const Modal = (() => {
       actionsEl.appendChild(btn);
     });
     overlay.classList.add('open');
+    openedAt = Date.now();
   }
   function close() { overlay.classList.remove('open'); }
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-  return { show, close };
+  // Backdrop tap closes the modal — but ignore the synthetic "ghost click"
+  // that can fire ~300ms after the tap which opened the screen/modal,
+  // otherwise a welcome-back popup can be dismissed before it's even seen.
+  overlay.addEventListener('click', e => { if (e.target === overlay && Date.now() - openedAt > 400) close(); });
+  return { show, close, isOpen };
 })();
 
 /* ── Floating Number Animation ────────────────────────────────── */
@@ -1116,6 +1122,7 @@ const SettingsScreen = (() => {
   let tickFn = null;
   let autosaveTimer = null;
   let goldenCookieTimer = null;
+  let goldenDespawnTimer = null;
   let goldenActive = false;
 
   function defaultState() {
@@ -1855,6 +1862,7 @@ const SettingsScreen = (() => {
     S.totalBaked += bonus;
     S.allTimeBaked = (S.allTimeBaked || 0) + bonus;
     goldenActive = false;
+    clearTimeout(goldenDespawnTimer);
     document.getElementById('ck-golden').style.display = 'none';
     floatNum(e.clientX, e.clientY, '🌕 +' + Fmt.format(bonus), '#f5c542');
     AchievementSystem.unlock('golden1');
@@ -1863,13 +1871,28 @@ const SettingsScreen = (() => {
     scheduleGoldenCookie();
   };
 
+  function clickerActive() {
+    return document.getElementById('screen-clicker')?.classList.contains('active');
+  }
+
+  function clearGoldenCookie() {
+    clearTimeout(goldenCookieTimer);
+    clearTimeout(goldenDespawnTimer);
+    goldenActive = false;
+    const gc = document.getElementById('ck-golden');
+    if (gc) gc.style.display = 'none';
+  }
+
   function scheduleGoldenCookie() {
     const delay = (90 + Math.random() * 210) * 1000 * goldenFreqMul(S); // 1.5–5 min (reduced by tech)
     clearTimeout(goldenCookieTimer);
+    clearTimeout(goldenDespawnTimer);
     goldenCookieTimer = setTimeout(() => spawnGoldenCookie(), delay);
   }
 
   function spawnGoldenCookie() {
+    // Never spawn while away from the clicker, or over the welcome-back popup.
+    if (!clickerActive() || Modal.isOpen()) { scheduleGoldenCookie(); return; }
     const gc = document.getElementById('ck-golden');
     if (!gc) return;
     if (!Settings.get('golden')) {       // disabled in settings — check back later
@@ -1886,7 +1909,8 @@ const SettingsScreen = (() => {
     gc.style.display = 'block';
     goldenActive = true;
     // Disappears after 30s if not clicked
-    setTimeout(() => {
+    clearTimeout(goldenDespawnTimer);
+    goldenDespawnTimer = setTimeout(() => {
       goldenActive = false;
       gc.style.display = 'none';
       scheduleGoldenCookie();
@@ -1934,13 +1958,14 @@ const SettingsScreen = (() => {
       renderAll();
       Ticker.add(tickFn);
       autosaveTimer = setInterval(() => saveGame(), AUTOSAVE_MS);
-      scheduleGoldenCookie();
+      clearGoldenCookie();      // clear any leaked state/timers from a prior visit
+      scheduleGoldenCookie();   // spawn waits 1.5min+, so the welcome popup shows first
     },
     onLeave: () => {
       saveGame();
       Ticker.remove(tickFn);
       clearInterval(autosaveTimer);
-      clearTimeout(goldenCookieTimer);
+      clearGoldenCookie();
     }
   });
 
@@ -2019,6 +2044,66 @@ const SettingsScreen = (() => {
     { name:'Epic',      cls:'epic',   mul:2.1, color:'var(--epic)'   },
     { name:'Legendary', cls:'legend', mul:3.2, color:'var(--gold)'   },
   ];
+  const INV_CAP = 18; // backpack size — overflow auto-sells the weakest item
+
+  /* ── Gear affixes ───────────────────────────────────────────────
+        Secondary bonuses that turn loot into build choices. Higher
+        rarities roll more (and stronger) affixes, so a Legendary with
+        the right affixes can beat a higher-base Epic for your build.
+        Values are flat numbers interpreted per-kind in gearAffixTotals. */
+  const GEAR_AFFIXES = [
+    { id:'dmg',  name:'of Power',     icon:'⚔️', fmt:v=>`+${v}% Damage` },
+    { id:'hp',   name:'of Vigor',     icon:'❤️', fmt:v=>`+${v}% Max HP` },
+    { id:'crit', name:'of Precision', icon:'💥', fmt:v=>`+${v}% Crit Chance` },
+    { id:'critd',name:'of Savagery',  icon:'🎯', fmt:v=>`+${v}% Crit Damage` },
+    { id:'gold', name:'of Fortune',   icon:'💰', fmt:v=>`+${v}% Gold` },
+    { id:'life', name:'of Leeching',  icon:'🩸', fmt:v=>`+${v}% Lifesteal` },
+    { id:'spd',  name:'of Swiftness', icon:'⚡', fmt:v=>`+${(v/100).toFixed(2)} Atk Speed` },
+  ];
+  const AFFIX_COUNT = [0, 1, 2, 3]; // by rarity index: Common,Rare,Epic,Legendary
+  function affixDef(id) { return GEAR_AFFIXES.find(a => a.id === id); }
+  function affixText(a) { const d = affixDef(a.id); return d ? d.fmt(a.val) : ''; }
+  function affixSummary(g) {
+    if (!g || !g.affixes || !g.affixes.length) return '';
+    return g.affixes.map(affixText).join(' · ');
+  }
+  // Roll a single affix magnitude for the given rarity & kind
+  function affixRoll(id, rarIdx) {
+    const range = { 1:[4,8], 2:[7,12], 3:[10,18] }[rarIdx] || [3,5];
+    let v = range[0] + Math.floor(Math.random() * (range[1] - range[0] + 1));
+    if (id === 'spd')  v = Math.max(3, Math.round(v * 0.7));  // attack speed stays modest (v/100)
+    if (id === 'crit') v = Math.max(2, Math.round(v * 0.6));  // crit-chance points stay modest
+    return v;
+  }
+  function rollAffixes(rarIdx) {
+    const n = AFFIX_COUNT[rarIdx] || 0;
+    if (!n) return [];
+    const pool = GEAR_AFFIXES.slice();
+    const out = [];
+    for (let i = 0; i < n && pool.length; i++) {
+      const d = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+      out.push({ id: d.id, val: affixRoll(d.id, rarIdx) });
+    }
+    return out;
+  }
+  // Sum all affix bonuses across the three equipped slots
+  function gearAffixTotals(state) {
+    const t = { dmg:0, hp:0, crit:0, critd:0, gold:0, life:0, spd:0 };
+    GEAR_SLOTS.forEach(slot => {
+      const g = state.gear[slot];
+      if (!g || !g.affixes) return;
+      g.affixes.forEach(a => { if (t[a.id] !== undefined) t[a.id] += a.val; });
+    });
+    return t;
+  }
+  // Rough power rating used for auto-equip + ▲/▼ compare arrows
+  function gearScore(g) {
+    if (!g) return 0;
+    let s = g.value * (1 + g.rarity * 0.18);
+    if (g.affixes) g.affixes.forEach(a => { s += a.val * 1.6; });
+    return s;
+  }
+  function sellValue(g) { return Math.floor(g.value * 3 * (g.rarity + 1)); }
 
   /* ── Skill tree (skill points, prereq-gated) ───────────────── */
   const UNLOCK_SKILLS = 10; // max floor reached to unlock the skill tree
@@ -2077,7 +2162,10 @@ const SettingsScreen = (() => {
     const base   = 6 + Math.floor(Math.pow(floor, 1.35) * 1.4);
     const statIdx = slot === 'weapon' ? 0 : slot === 'armor' ? 1 : Math.floor(Math.random() * 3);
     const value   = Math.floor(base * rar.mul * (0.85 + Math.random() * 0.35));
-    return { slot, icon, rarity: rarIdx, name: rar.name + ' ' + (slot.charAt(0).toUpperCase()+slot.slice(1)), statIdx, value };
+    const affixes = rollAffixes(rarIdx);
+    let name = rar.name + ' ' + (slot.charAt(0).toUpperCase()+slot.slice(1));
+    if (affixes.length) name += ' ' + affixDef(affixes[0].id).name; // e.g. "Epic Weapon of Power"
+    return { slot, icon, rarity: rarIdx, name, statIdx, value, affixes };
   }
 
   /* ── Achievements ─────────────────────────────────────────────*/
@@ -2130,6 +2218,8 @@ const SettingsScreen = (() => {
       soulStartFloor:0,
       stats: { atk:0, hp:0, crit:0, crit2:0, spd:0 }, // levels, not values
       gear:  { weapon:null, armor:null, ring:null },
+      inventory: [],     // backpack of unequipped gear the player curates
+      autoEquip: true,   // auto-equip a drop if it scores higher than what's worn
       hp:    null, // current hp — set on enter
       waveStreak:    0,  // waves cleared without dying (drives Bloodlust)
       // ── Gated layers (persist across rebirth) ──
@@ -2151,7 +2241,8 @@ const SettingsScreen = (() => {
     if (state.gear.weapon) gearBonus += state.gear.weapon.value * enchantMul(state, 'weapon');
     const soulMul  = 1 + (state.soulDmgMul || 0);
     const skillMul = 1 + 0.05 * skillLvl(state, 'k_atk1');
-    return Math.floor((base * soulMul + gearBonus) * skillMul * gearSetBonus(state));
+    const affixMul = 1 + gearAffixTotals(state).dmg / 100;
+    return Math.floor((base * soulMul + gearBonus) * skillMul * gearSetBonus(state) * affixMul);
   }
 
   function heroMaxHp(state) {
@@ -2161,30 +2252,35 @@ const SettingsScreen = (() => {
     if (state.gear.armor) gearBonus += state.gear.armor.value * 5 * enchantMul(state, 'armor');
     const soulMul  = 1 + (state.soulHpMul || 0);
     const skillMul = 1 + 0.06 * skillLvl(state, 'k_hp1');
-    return Math.floor((base * soulMul + gearBonus) * skillMul * gearSetBonus(state));
+    const affixMul = 1 + gearAffixTotals(state).hp / 100;
+    return Math.floor((base * soulMul + gearBonus) * skillMul * gearSetBonus(state) * affixMul);
   }
 
   function heroCrit(state) {
     const lvl = state.stats.crit;
     const ringCrit = state.gear.ring?.statIdx === 2 ? state.gear.ring.value / 10 * enchantMul(state, 'ring') : 0;
-    return Math.min(80, lvl * 2 + (state.soulCritBonus || 0) + 3 * skillLvl(state, 'k_crit') + ringCrit);
+    return Math.min(80, lvl * 2 + (state.soulCritBonus || 0) + 3 * skillLvl(state, 'k_crit') + ringCrit + gearAffixTotals(state).crit);
   }
 
   function heroCritDmg(state) {
     const lvl = state.stats.crit2;
     const ringDmg = state.gear.ring?.statIdx === 1 ? state.gear.ring.value * enchantMul(state, 'ring') : 0;
-    return 150 + lvl * 10 + ringDmg + 8 * skillLvl(state, 'k_focus');
+    return 150 + lvl * 10 + ringDmg + 8 * skillLvl(state, 'k_focus') + gearAffixTotals(state).critd;
   }
 
   function goldMul(state) {
-    return (1 + (state.soulGoldMul || 0)) * (1 + 0.08 * skillLvl(state, 'k_gold1'));
+    return (1 + (state.soulGoldMul || 0)) * (1 + 0.08 * skillLvl(state, 'k_gold1')) * (1 + gearAffixTotals(state).gold / 100);
   }
   function dropLuck(state) { return 0.04 * skillLvl(state, 'k_drop'); }
   function skillsUnlocked(state) { return (state.maxFloorEver || 0) >= UNLOCK_SKILLS; }
+  // Fraction of damage healed back: Lifesteal skill + 'of Leeching' affixes
+  function lifestealFrac(state) {
+    return 0.02 * skillLvl(state, 'k_life') + gearAffixTotals(state).life / 100;
+  }
 
   function heroSpeed(state) {
     const lvl = state.stats.spd;
-    return Math.min(8, 1 + lvl * 0.2 + 0.15 * skillLvl(state, 'k_haste')); // attacks per second
+    return Math.min(8, 1 + lvl * 0.2 + 0.15 * skillLvl(state, 'k_haste') + gearAffixTotals(state).spd / 100); // attacks per second
   }
 
   // Bloodlust: damage ramps as you clear waves without dying
@@ -2322,6 +2418,8 @@ const SettingsScreen = (() => {
       S = defaultState();
     }
     applySoulTracks(S); // recompute repeatable soul bonuses from stored levels
+    if (!Array.isArray(S.inventory)) S.inventory = [];
+    if (typeof S.autoEquip !== 'boolean') S.autoEquip = true;
     if (S.hp === null || S.hp > heroMaxHp(S)) S.hp = heroMaxHp(S);
     S.savedAt = Date.now();
   }
@@ -2355,22 +2453,89 @@ const SettingsScreen = (() => {
 
   /* ── Combat resolution ─────────────────────────────────────── */
 
-  // Roll & resolve a gear drop. Better gear auto-equips; duplicates/worse
-  // gear is auto-sold for gold so every drop still rewards you.
+  // Drop gold for selling an item; updates all gold counters
+  function gainGold(amount) {
+    S.gold += amount; S.totalGold += amount; S.allTimeGold = (S.allTimeGold || 0) + amount;
+  }
+  // Add an item to the backpack. If the bag is full, the single weakest
+  // item (which may be the new one) is auto-sold so loot is never lost.
+  function inventoryAdd(g) {
+    if (!Array.isArray(S.inventory)) S.inventory = [];
+    S.inventory.push(g);
+    while (S.inventory.length > INV_CAP) {
+      let worst = 0;
+      for (let i = 1; i < S.inventory.length; i++)
+        if (gearScore(S.inventory[i]) < gearScore(S.inventory[worst])) worst = i;
+      const junk = S.inventory.splice(worst, 1)[0];
+      const sell = sellValue(junk);
+      gainGold(sell);
+      Toast.show('💰', 'Bag full — auto-sold', `${junk.name} · +${Fmt.format(sell)} gold`);
+    }
+  }
+
+  // Roll & resolve a gear drop. With auto-equip on, a higher-scoring drop is
+  // worn immediately (the old piece drops into the bag); otherwise the drop
+  // goes to the bag for you to compare, equip, or sell — so loot has weight.
   function grantGear(quality) {
     const gear = randomGear(S.floor, dropLuck(S), quality);
-    const equipped = S.gear[gear.slot];
-    if (!equipped || gear.value > equipped.value) {
-      S.gear[gear.slot] = gear;
-      Toast.show(gear.icon, gear.name + ' Equipped!', `+${gear.value} ${STAT_DEFS[gear.statIdx].name}`, gear.rarity >= 2);
-    } else {
-      const sell = gear.value * 3 * (gear.rarity + 1);
-      S.gold += sell; S.totalGold += sell; S.allTimeGold = (S.allTimeGold || 0) + sell;
-      Toast.show(gear.icon, gear.name + ' (sold)', `+${Fmt.format(sell)} gold`, gear.rarity >= 2);
-    }
     if (gear.rarity >= 3) AchievementSystem.unlock('d_legend');
     if (gear.rarity >= 2) AchievementSystem.unlock('d_epic');
+    const equipped = S.gear[gear.slot];
+    if (S.autoEquip && (!equipped || gearScore(gear) > gearScore(equipped))) {
+      S.gear[gear.slot] = gear;
+      if (equipped) inventoryAdd(equipped);
+      const sub = affixSummary(gear) || `+${gear.value} ${STAT_DEFS[gear.statIdx].name}`;
+      Toast.show(gear.icon, gear.name + ' Equipped!', sub, gear.rarity >= 2);
+    } else {
+      inventoryAdd(gear);
+      Toast.show(gear.icon, 'Loot: ' + gear.name, affixSummary(gear) || 'Sent to your bag', gear.rarity >= 2);
+    }
   }
+
+  // Equip an item from the bag; the displaced piece returns to the bag.
+  window.DungeonGame_equip = function(idx) {
+    if (!S.inventory || !S.inventory[idx]) return;
+    const g = S.inventory.splice(idx, 1)[0];
+    const old = S.gear[g.slot];
+    S.gear[g.slot] = g;
+    if (old) S.inventory.push(old);
+    S.hp = Math.min(S.hp, heroMaxHp(S));
+    Toast.show(g.icon, g.name + ' equipped', affixSummary(g) || `+${g.value} ${STAT_DEFS[g.statIdx].name}`);
+    Haptics.vibrate(40);
+    checkAchievements();
+    renderGearTab(); renderCombat();
+  };
+
+  // Sell a single item from the bag for gold.
+  window.DungeonGame_sell = function(idx) {
+    if (!S.inventory || !S.inventory[idx]) return;
+    const g = S.inventory.splice(idx, 1)[0];
+    const sell = sellValue(g);
+    gainGold(sell);
+    Toast.show('💰', 'Sold ' + g.name, `+${Fmt.format(sell)} gold`);
+    Haptics.vibrate(30);
+    renderGearTab(); renderCombat();
+  };
+
+  // Sell every bagged item that doesn't beat what's already equipped.
+  window.DungeonGame_sellJunk = function() {
+    if (!S.inventory || !S.inventory.length) return;
+    let total = 0, n = 0;
+    S.inventory = S.inventory.filter(g => {
+      if (gearScore(g) > gearScore(S.gear[g.slot])) return true; // keep upgrades
+      total += sellValue(g); n++;
+      return false;
+    });
+    if (n) { gainGold(total); Toast.show('💰', `Sold ${n} item${n>1?'s':''}`, `+${Fmt.format(total)} gold`); Haptics.vibrate(40); }
+    else Toast.show('🎒', 'Nothing to sell', 'Every bagged item beats your gear.');
+    renderGearTab(); renderCombat();
+  };
+
+  window.DungeonGame_toggleAutoEquip = function() {
+    S.autoEquip = !S.autoEquip;
+    Toast.show('🎚️', 'Auto-equip ' + (S.autoEquip ? 'ON' : 'OFF'), S.autoEquip ? 'Upgrades equip themselves' : 'All drops go to your bag');
+    renderGearTab();
+  };
 
   function onHeroDeath() {
     const reviveFrac = Math.min(0.95, 0.4 + 0.08 * skillLvl(S, 'k_wind'));
@@ -2436,9 +2601,9 @@ const SettingsScreen = (() => {
 
     currentEnemy.hp -= dmg;
 
-    // Lifesteal
-    const ls = skillLvl(S, 'k_life');
-    if (ls) S.hp = Math.min(heroMaxHp(S), S.hp + dmg * 0.02 * ls);
+    // Lifesteal (skill + 'of Leeching' affixes)
+    const lf = lifestealFrac(S);
+    if (lf) S.hp = Math.min(heroMaxHp(S), S.hp + dmg * lf);
 
     // Show floating dmg on enemy area
     const enemyEl = document.getElementById('dn-enemy-area');
@@ -2465,8 +2630,8 @@ const SettingsScreen = (() => {
     if (isCrit) dmg = Math.floor(dmg * heroCritDmg(S) / 100);
     dmg = Math.max(1, Math.floor(dmg * combatDmgMul(S, currentEnemy)));
     currentEnemy.hp -= dmg;
-    const ls = skillLvl(S, 'k_life');
-    if (ls) S.hp = Math.min(heroMaxHp(S), S.hp + dmg * 0.02 * ls);
+    const lf = lifestealFrac(S);
+    if (lf) S.hp = Math.min(heroMaxHp(S), S.hp + dmg * lf);
     floatNum(e.clientX, e.clientY, (isCrit ? '💥' : '👊') + Fmt.format(dmg), isCrit ? '#f5c542' : '#fff');
     Haptics.vibrate(25);
     if (currentEnemy.hp <= 0) { onEnemyKilled(); renderCombat(); }
@@ -2583,6 +2748,8 @@ const SettingsScreen = (() => {
         { label: 'Cancel', cls: '' },
         { label: '🌟 Rebirth', cls: 'btn-primary', fn: () => {
           const gear     = S.gear;
+          const inventory = S.inventory;
+          const autoEquip = S.autoEquip;
           const rebirths = S.rebirths + 1;
           const soulMods = { soulDmgMul: S.soulDmgMul, soulGoldMul: S.soulGoldMul, soulHpMul: S.soulHpMul, soulCritBonus: S.soulCritBonus, soulStartFloor: S.soulStartFloor };
           const soulUpgrades = S.soulUpgrades, soulLevels = S.soulLevels;
@@ -2596,6 +2763,8 @@ const SettingsScreen = (() => {
           S = defaultState();
           // maxFloor intentionally RESET — you must re-climb to rebirth again
           S.gear        = gear;
+          S.inventory   = inventory;
+          S.autoEquip   = autoEquip;
           S.rebirths    = rebirths;
           S.souls       = carrySouls;
           S.allTimeSouls = allTimeSouls;
@@ -2643,7 +2812,7 @@ const SettingsScreen = (() => {
         <p>Your hero <b>auto-attacks</b> the monster. <b class="text-gold">Tap the enemy</b> for big bonus hits.</p>
         <p class="mt-8">Each floor has <b>10 waves</b>. Wave 10 is a <b>👑 Boss</b>; clearing it advances a floor and drops gear + 💎 essence. Every 10th floor ends with a tough <b class="text-gold">🛡️ Guardian</b> that drops a rare zone <b>key</b>.</p>
         <p class="mt-8"><b>✨ Elites</b> appear at random — tougher, but far better loot.</p>
-        <p class="mt-8"><b class="text-green">💰 Gold</b> upgrades your stats. <b>Gear</b> auto-equips when it's an upgrade (duplicates auto-sell). <b>💎 Essence</b> enchants gear. Matching all three gear rarities grants a <b>set bonus</b>.</p>
+        <p class="mt-8"><b class="text-green">💰 Gold</b> upgrades your stats. <b>Gear</b> drops with <b class="text-accent">affixes</b> (extra bonuses like +Damage, Lifesteal or Crit) — rarer items roll more. Loot lands in your <b>🎒 Bag</b>: compare it, <b>equip</b> what fits your build, or <b>sell</b> the rest. Leave <b>Auto</b> on to auto-equip clear upgrades. <b>💎 Essence</b> enchants gear; matching all three rarities grants a <b>set bonus</b>.</p>
         <p class="mt-8"><b>⭐ Skills</b> (unlock floor ${UNLOCK_SKILLS}) cost points earned for each new deepest floor — higher tiers need levels in the skill above them.</p>
         <p class="mt-8"><b class="text-accent">🌟 Rebirth</b> at floor ${REBIRTH_FLOOR}+ resets your run (gold, stats, floor) for <b>Souls</b>. The deeper you reached, the more souls you earn. Spend them on repeatable <b>Soul Powers</b> and one-time milestones that make every run stronger. You must climb back up to rebirth again — so souls truly add up over time.</p>
         <p class="mt-8">If you die you drop back a wave and lose your <b>🔥 Bloodlust</b> streak, so keep your HP up.</p>
@@ -2784,7 +2953,7 @@ const SettingsScreen = (() => {
                  : 'Match all 3 slots at the same rarity (Rare+) for a set bonus';
     html += `<div style="background:var(--bg2);border:1px solid ${setMul>1?'var(--epic)':'var(--border)'};border-radius:var(--radius-sm);padding:10px;font-size:13px">
       <span style="font-weight:600">🧩 Set Bonus:</span> <span style="color:${setMul>1?'var(--green)':'var(--text2)'}">${setTxt}</span>
-      <div style="font-size:12px;color:var(--text2);margin-top:4px">💎 Essence: <span class="text-accent">${S.essence || 0}</span> — enchant gear (+8% each). Better gear auto-equips; duplicates auto-sell for gold.</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">💎 Essence: <span class="text-accent">${S.essence || 0}</span> — enchant gear (+8% each). Items roll <b>affixes</b> (extra bonuses); pick gear that fits your build.</div>
     </div>`;
     // Zone-key trophies collected from Guardians
     const keyEntries = Object.entries(S.keys || {}).filter(([,n]) => n > 0);
@@ -2798,6 +2967,11 @@ const SettingsScreen = (() => {
         <div style="font-size:12px;color:var(--text2);margin-top:2px">Rare trophies dropped by Zone Guardians on floors 10, 20, 30…</div>
       </div>`;
     }
+    // Renders the affix line for an item (coloured by its rarity)
+    const affixLine = g => (g && g.affixes && g.affixes.length)
+      ? `<div style="font-size:11px;color:var(--accent);margin-top:1px">${g.affixes.map(a => `${affixDef(a.id).icon} ${affixText(a)}`).join('  ')}</div>` : '';
+
+    html += `<div class="menu-section-title" style="padding:4px 2px 0">Equipped</div>`;
     GEAR_SLOTS.forEach(slot => {
       const g = S.gear[slot];
       const color = g ? GEAR_RARITY[g.rarity].color : 'var(--text2)';
@@ -2810,10 +2984,50 @@ const SettingsScreen = (() => {
         <div class="upg-info">
           <div class="upg-name" style="color:${color}">${g ? g.name : slot.charAt(0).toUpperCase()+slot.slice(1)+' (empty)'} ${enLvl ? `<span style="color:var(--gold);font-size:11px">+${enLvl}</span>` : ''}</div>
           ${g ? `<div style="font-size:12px;color:var(--text2)">+${eff} ${STAT_DEFS[g.statIdx].name}${enLvl?` <span style="color:var(--text2)">(base ${g.value})</span>`:''}</div>` : '<div style="font-size:12px;color:var(--text2)">Defeat bosses to find gear</div>'}
+          ${affixLine(g)}
         </div>
-        ${g ? `<button class="bld-level ${aff?'':'locked'}" onclick="DungeonGame_enchant('${slot}')" style="flex-shrink:0">🔨 💎${enCost}</button>` : ''}
+        ${g ? `<button class="bld-level ${aff?'can-buy':'locked'}" onclick="DungeonGame_enchant('${slot}')" style="flex-shrink:0">🔨 💎${enCost}</button>` : ''}
       </div>`;
     });
+
+    // ── Backpack: curate your loot ──────────────────────────────
+    const inv = S.inventory || [];
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 2px 0">
+        <span class="menu-section-title" style="padding:0">🎒 Bag <span style="color:var(--text2);font-weight:400">${inv.length}/${INV_CAP}</span></span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="buy-amt-btn ${S.autoEquip?'active':''}" onclick="DungeonGame_toggleAutoEquip()" title="Auto-equip upgrades">⚙️ Auto ${S.autoEquip?'ON':'OFF'}</button>
+          ${inv.length ? `<button class="buy-amt-btn" onclick="DungeonGame_sellJunk()">💰 Sell extras</button>` : ''}
+        </div>
+      </div>`;
+    if (!inv.length) {
+      html += `<div class="center text-muted" style="padding:14px 10px;font-size:12px">Your bag is empty. ${S.autoEquip ? 'Drops that beat your gear equip automatically; the rest land here.' : 'Auto-equip is off — every drop lands here for you to choose.'}</div>`;
+    } else {
+      // Strongest first so the best finds are easy to spot
+      const order = inv.map((g,i) => i).sort((a,b) => gearScore(inv[b]) - gearScore(inv[a]));
+      order.forEach(i => {
+        const g = inv[i];
+        const color = GEAR_RARITY[g.rarity].color;
+        const equipped = S.gear[g.slot];
+        const diff = gearScore(g) - gearScore(equipped);
+        const cmp = !equipped ? `<span style="color:var(--green)">▲ new ${g.slot}</span>`
+                  : diff > 0.5 ? `<span style="color:var(--green)">▲ upgrade</span>`
+                  : diff < -0.5 ? `<span style="color:var(--red)">▼ weaker</span>`
+                  : `<span style="color:var(--text2)">≈ similar</span>`;
+        const canEquip = !equipped || diff > 0.5;
+        html += `<div class="upgrade-item" style="border-color:${color}">
+          <div class="upg-icon" style="font-size:24px">${g.icon}</div>
+          <div class="upg-info">
+            <div class="upg-name" style="color:${color}">${g.name}</div>
+            <div style="font-size:12px;color:var(--text2)">+${g.value} ${STAT_DEFS[g.statIdx].name} · ${cmp}</div>
+            ${affixLine(g)}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+            <button class="bld-level ${canEquip?'can-buy':''}" onclick="DungeonGame_equip(${i})">Equip</button>
+            <button class="bld-level" onclick="DungeonGame_sell(${i})" style="color:var(--gold)">💰${Fmt.format(sellValue(g))}</button>
+          </div>
+        </div>`;
+      });
+    }
     html += '</div>';
     list.innerHTML = html;
   }
@@ -2840,7 +3054,8 @@ const SettingsScreen = (() => {
         const reqSk = sk.req ? SKILLS.find(s => s.id === sk.req) : null;
         // Preview shows current level's effect, or the first level's if unbought
         const descLvl = maxed ? lvl : Math.max(lvl, 1);
-        html += `<button class="upgrade-item ${aff || maxed ? '' : 'locked'}" ${maxed ? '' : `onclick="DungeonGame_buySkill('${sk.id}')"`} style="${lvl>0?'border-color:var(--accent)':''}">
+        const cls = maxed ? '' : (aff ? 'can-buy' : 'locked');
+        html += `<button class="upgrade-item ${cls}" ${maxed ? '' : `onclick="DungeonGame_buySkill('${sk.id}')"`} style="${lvl>0&&!aff?'border-color:var(--accent)':''}">
           <div class="upg-icon">${sk.icon}</div>
           <div class="upg-info">
             <div class="upg-name">${sk.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}/${sk.max}</span></div>
@@ -2885,7 +3100,7 @@ const SettingsScreen = (() => {
       const lvl  = soulTrackLvl(S, t.id);
       const cost = soulTrackCost(t, lvl);
       const aff  = (S.souls || 0) >= cost;
-      html += `<button class="upgrade-item ${aff?'':'locked'}" onclick="DungeonGame_buySoulTrack('${t.id}')">
+      html += `<button class="upgrade-item ${aff?'can-buy':'locked'}" onclick="DungeonGame_buySoulTrack('${t.id}')">
         <div class="upg-icon">${t.icon}</div>
         <div class="upg-info">
           <div class="upg-name">${t.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}</span></div>
@@ -2899,7 +3114,7 @@ const SettingsScreen = (() => {
     SOUL_UPGRADES.forEach(u => {
       const bought = S.soulUpgrades[u.id];
       const canAfford = S.souls >= u.cost && !bought;
-      html += `<button class="upgrade-item ${canAfford||bought?'':'locked'}" onclick="DungeonGame_buySoulUpgrade('${u.id}')">
+      html += `<button class="upgrade-item ${bought?'':(canAfford?'can-buy':'locked')}" onclick="DungeonGame_buySoulUpgrade('${u.id}')">
         <div class="upg-icon">${u.icon}</div>
         <div class="upg-info">
           <div class="upg-name">${u.name} ${bought?'<span style="color:var(--green);font-size:12px">✓</span>':''}</div>
@@ -2999,6 +3214,9 @@ const SettingsScreen = (() => {
         #screen-dungeon .buy-amt-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
         #screen-dungeon .upgrade-item.can-buy { border-color:var(--green); }
         #screen-dungeon .upgrade-item.can-buy:active { border-color:var(--accent); }
+        #screen-dungeon .bld-level { padding:4px 9px; margin-left:0; }
+        #screen-dungeon .bld-level.can-buy { border-color:var(--green); color:var(--green); }
+        #screen-dungeon .bld-level.can-buy:active { border-color:var(--accent); }
       </style>
       <div id="dn-main" style="position:relative">
         <div id="dn-combat-zone">
