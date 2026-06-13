@@ -38,6 +38,7 @@
     { id:'firemaking', name:'Firemaking', icon:'🔥', kind:'produce' },
     { id:'cooking',    name:'Cooking',    icon:'🍳', kind:'produce' },
     { id:'smithing',   name:'Smithing',   icon:'🔨', kind:'produce' },
+    { id:'slayer',     name:'Slayer',     icon:'💀', kind:'slayer' },
   ];
   const SKILL = Object.fromEntries(SKILLS.map(s => [s.id, s]));
 
@@ -103,8 +104,22 @@
     amulet_diamond: { name:'Amulet of Skill',    icon:'📿', type:'gear', slot:'amulet', tier:3, acc:12, str:12, rare:0.3, value:2400 },
     amulet_glory:   { name:'Amulet of Glory',    icon:'🏵️', type:'gear', slot:'amulet', tier:4, acc:22, str:22, rare:0.6, value:8000 },
   };
+  // Skill capes — earned at level 99, a 'cape' equip slot. Each gives +5% global
+  // XP plus a perk for its own domain; the Max Cape (all 99) gives +10% and all perks.
+  SKILLS.forEach((s, i) => { ITEMS['cape_' + s.id] = { name: s.name + ' Cape', icon: '🎽', type: 'gear', slot: 'cape', tier: i + 1, gxp: 0.05, perkSkill: s.id, perkType: s.kind, value: 5000 }; });
+  ITEMS['cape_max'] = { name: 'Max Cape', icon: '🧥', type: 'gear', slot: 'cape', tier: 99, gxp: 0.10, perkSkill: 'all', perkType: 'all', value: 50000 };
   function itemName(id) { return (ITEMS[id] || {}).name || id; }
   function itemIcon(id) { return (ITEMS[id] || {}).icon || '❔'; }
+
+  /* ── Slayer rewards (spend Slayer points earned from tasks) ───── */
+  const SLAYER_REWARDS = [
+    { id:'sl_dmg',  name:"Slayer's Edge", icon:'⚔️', max:10, base:3, mul:1.6, fmt:l=>`+${l*4}% combat damage` },
+    { id:'sl_speed',name:'Bloodlust',     icon:'⚡', max:5,  base:5, mul:1.8, fmt:l=>`+${l*3}% gathering speed` },
+    { id:'sl_auto', name:'Slayer Contract',icon:'📜', max:1, base:8, mul:1, fmt:()=>'Auto-assign the next task on completion' },
+  ];
+  function slayerLvlOf(id) { return (S.slayer && S.slayer.rewards && S.slayer.rewards[id]) || 0; }
+  function slayerRewardDef(id) { return SLAYER_REWARDS.find(r => r.id === id); }
+  function slayerRewardCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
 
   /* ── Skill actions (gathering + production) ─────────────────────
         type gather  → produces 1 item every `time` s
@@ -211,11 +226,12 @@
       schema:      'realm',          // marker: distinguishes the reworked save
       skillsXp,
       bank:        { coins: 25 },
-      equip:       { weapon: null, armor: null, tool: null, amulet: null },
+      equip:       { weapon: null, armor: null, tool: null, amulet: null, cape: null },
       action:      null,             // { type:'skill', id } | { type:'combat', id }
       combatStyle: 'attack',         // attack | strength | defence (Accurate/Aggressive/Defensive)
       mastery:     {},               // actionId -> mastery xp (per-action progression)
       shop:        {},               // shop upgrade id -> level (coin sink)
+      slayer:      { task: null, left: 0, total: 0, points: 0, done: 0, rewards: {} },
       maxCombat:   0,
       kills:       0,
       actionsDone: 0,
@@ -241,7 +257,21 @@
     if (after > before) {
       Toast.show(SKILL[id].icon, SKILL[id].name + ' Level ' + after + '!', after >= MAX_LEVEL ? 'Maxed — 99!' : '', after >= MAX_LEVEL);
       Haptics.vibrate([40, 30, 60]);
+      if (before < MAX_LEVEL && after >= MAX_LEVEL) grantCape(id);
       checkAchievements();
+    }
+  }
+  // Grant a skill's cape at 99 (and the Max Cape once every skill is 99).
+  function grantCape(id) {
+    if (!bankCount('cape_' + id) && S.equip.cape !== 'cape_' + id) {
+      bankAdd('cape_' + id, 1);
+      AchievementSystem.unlock('r_cape');
+      Toast.show('🎽', SKILL[id].name + ' Cape!', 'Equip it from the Bank — capes give +5% XP & a perk', true);
+    }
+    if (SKILLS.every(s => skillLevel(s.id) >= MAX_LEVEL) && !bankCount('cape_max') && S.equip.cape !== 'cape_max') {
+      bankAdd('cape_max', 1);
+      AchievementSystem.unlock('r_maxcape');
+      Toast.show('🧥', 'MAX CAPE!', 'Every skill at 99 — the ultimate cape', true);
     }
   }
 
@@ -256,17 +286,22 @@
   function equippedItem(slot) { const id = S.equip[slot]; return id ? ITEMS[id] : null; }
   function bonus(slot, key)   { const it = equippedItem(slot); return (it && it[key]) || 0; }
   function toolSpeed()        { return bonus('tool', 'speed'); }
+  // Skill-cape perks: does the worn cape help this skill / combat / cooking?
+  function capeHelps(skillId) { const c = equippedItem('cape'); return !!c && (c.perkSkill === skillId || c.perkSkill === 'all'); }
+  function capeCombat()       { const c = equippedItem('cape'); return c && (c.perkType === 'combat' || c.perkType === 'all') ? 0.05 : 0; }
 
   // Gathering/production speed: tool + skill level, capped. Synergies:
   //  - mining level speeds Smithing; firemaking level cuts cooking burn.
   function actionEffTime(a) {
     let bonusPct = Math.min(0.30, skillLevel(a.skill) * 0.0025);   // up to -30% from level
     bonusPct += masterySpeed(a.id);                                // per-action mastery
-    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + bonus('amulet', 'gspeed') + 0.03 * shopLvl('gloves');
+    if (capeHelps(a.skill)) bonusPct += 0.15;                      // matching skill cape
+    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + bonus('amulet', 'gspeed') + 0.03 * shopLvl('gloves') + 0.03 * slayerLvlOf('sl_speed');
     if (a.skill === 'smithing') bonusPct += Math.min(0.20, skillLevel('mining') * 0.002); // mining→smithing synergy
-    return Math.max(0.3, a.time * (1 - Math.min(0.7, bonusPct)));
+    return Math.max(0.3, a.time * (1 - Math.min(0.75, bonusPct)));
   }
   function cookBurnChance(a) {
+    if (capeHelps('cooking')) return 0; // Cooking cape never burns
     return Math.max(0, a.burn - skillLevel('cooking') * 0.01 - skillLevel('firemaking') * 0.003);
   }
   // Rare-drop multiplier: Amulet of Foraging/Skill/Glory boost gem chances.
@@ -304,8 +339,8 @@
   function shopLvl(id) { return (S.shop && S.shop[id]) || 0; }
   function shopDef(id) { return SHOP.find(s => s.id === id); }
   function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
-  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome'); }
-  function combatDmgMul() { return 1 + 0.03 * shopLvl('whet'); }
+  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + bonus('cape', 'gxp'); }
+  function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat(); }
   function offlineCap()   { return OFFLINE_CAP + shopLvl('charm') * 7200; }
 
   /* ── Combat math ─────────────────────────────────────────────── */
@@ -412,6 +447,12 @@
       }
     });
     S.kills++;
+    // Slayer: progress the assigned task when fighting the right monster
+    if (S.slayer && S.slayer.task === m.id && S.slayer.left > 0) {
+      addXp('slayer', Math.round(m.xp * 0.8));
+      S.slayer.left--;
+      if (S.slayer.left <= 0) completeSlayerTask(m);
+    }
     const cb = combatLevel(); if (cb > (S.maxCombat || 0)) S.maxCombat = cb;
     checkAchievements();
     cmb.mhp = m.hp; // respawn another
@@ -472,10 +513,50 @@
     }
   };
 
+  /* ── Slayer tasks ────────────────────────────────────────────── */
+  function completeSlayerTask(m) {
+    const pts = 1 + Math.floor(combatLevel() / 8);
+    const bonus = Math.round(m.coins[1] * S.slayer.total * 0.5);
+    S.slayer.points = (S.slayer.points || 0) + pts;
+    S.slayer.done = (S.slayer.done || 0) + 1;
+    bankAdd('coins', bonus);
+    AchievementSystem.unlock('r_slayer');
+    if (S.slayer.done >= 50) AchievementSystem.unlock('r_slayer50');
+    Toast.show('💀', 'Task complete!', `+${pts} Slayer points · +${Fmt.format(bonus)} 🪙`, true);
+    Haptics.vibrate([60, 40, 90]);
+    if (slayerLvlOf('sl_auto')) assignSlayerTask(); else { S.slayer.task = null; S.slayer.left = 0; }
+  }
+  function assignSlayerTask() {
+    const cb = combatLevel();
+    const pool = MONSTERS.filter(m => m.reqCb <= cb);
+    const m = pool[Math.floor(Math.random() * pool.length)];
+    const total = 15 + Math.floor(cb / 2) + Math.floor(Math.random() * 11);
+    S.slayer.task = m.id; S.slayer.left = total; S.slayer.total = total;
+    Toast.show('💀', 'New Slayer task', `Defeat ${total}× ${m.name}`);
+  }
+  window.IdleRealm_newTask = function() {
+    if (S.slayer.task && S.slayer.left > 0) { Toast.show('💀', 'Finish your task first', `${S.slayer.left}× ${MONSTER[S.slayer.task].name} left`); return; }
+    assignSlayerTask();
+    renderSlayerTab(); renderActiveHeader();
+  };
+  window.IdleRealm_buySlayer = function(id) {
+    const def = slayerRewardDef(id); if (!def) return;
+    const lvl = slayerLvlOf(id);
+    if (lvl >= def.max) return;
+    const cost = slayerRewardCost(def, lvl);
+    if ((S.slayer.points || 0) < cost) { Toast.show('💀', 'Not enough points', `Need ${cost} Slayer points`); return; }
+    S.slayer.points -= cost;
+    if (!S.slayer.rewards) S.slayer.rewards = {};
+    S.slayer.rewards[id] = lvl + 1;
+    Toast.show(def.icon, def.name + (def.max > 1 ? ' → Lv.' + (lvl + 1) : ''), def.fmt(lvl + 1));
+    Haptics.vibrate(40);
+    renderSlayerTab();
+  };
+
   /* ── Equipment actions ───────────────────────────────────────── */
   function maybeAutoEquip(id) {
     const it = ITEMS[id]; if (!it || it.type !== 'gear') return;
-    if (it.slot === 'amulet') return; // amulets are a build choice — equip manually
+    if (it.slot === 'amulet' || it.slot === 'cape') return; // build choices — equip manually
     const cur = equippedItem(it.slot);
     if (!cur || (it.tier || 0) > (cur.tier || 0)) S.equip[it.slot] = id;
   }
@@ -528,6 +609,10 @@
     AchievementSystem.register('r_glory',   '🏵️','For Glory',        'Craft the Amulet of Glory.',   'Needs a Dragonstone');
     AchievementSystem.register('r_mastery', '🎯','Master of One',    'Max an action to mastery 50.', 'Repeat one action a lot');
     AchievementSystem.register('r_store',   '🛒','Big Spender',      'Buy a Store upgrade.',         'Sell loot, spend coins');
+    AchievementSystem.register('r_slayer',  '💀','Slayer',           'Complete a Slayer task.',      'Take a task, then fight');
+    AchievementSystem.register('r_slayer50','☠️','Master Slayer',    'Complete 50 Slayer tasks.',    'Keep taking tasks');
+    AchievementSystem.register('r_cape',    '🎽','Capeworthy',       'Earn a skill cape (level 99).','Max any skill');
+    AchievementSystem.register('r_maxcape', '🧥','Completionist',    'Earn the Max Cape (all 99).',  'Max every skill');
   }
   function checkAchievements() {
     if (S.kills >= 10)  AchievementSystem.unlock('r_kill10');
@@ -626,9 +711,10 @@
       S = defaultState();
     }
     S.bank  = S.bank || { coins: 25 };
-    S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null }, S.equip || {});
+    S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null, cape: null }, S.equip || {});
     S.mastery = S.mastery || {};
     S.shop = S.shop || {};
+    S.slayer = Object.assign({ task: null, left: 0, total: 0, points: 0, done: 0, rewards: {} }, S.slayer || {});
     if (!S.skillsXp) S.skillsXp = defaultState().skillsXp;
     SKILLS.forEach(s => { if (typeof S.skillsXp[s.id] !== 'number') S.skillsXp[s.id] = (s.id === 'hitpoints' ? xpForLevel(10) : 0); });
     progress = 0; cmb = null;
@@ -684,6 +770,22 @@
     return parts.join(' · ');
   }
   function foodCount() { return Object.keys(S.bank).reduce((n, id) => n + ((ITEMS[id] && ITEMS[id].type === 'food') ? bankCount(id) : 0), 0); }
+  // For input-consuming actions: how many of each material are left and how
+  // long until the action runs out at the current rate.
+  function inputsLine(a) {
+    if (!a.inputs) return '';
+    const eff = actionEffTime(a);
+    let minCycles = Infinity;
+    const parts = Object.keys(a.inputs).map(k => {
+      const have = bankCount(k), per = a.inputs[k];
+      const cyc = Math.floor(have / per);
+      if (cyc < minCycles) minCycles = cyc;
+      const low = have < per;
+      return `<span style="${low ? 'color:var(--red)' : ''}">${itemIcon(k)} ${Fmt.format(have)}</span>`;
+    });
+    const empty = (minCycles === Infinity || minCycles <= 0) ? '<span style="color:var(--red)">empty!</span>' : `runs out in <b>${Fmt.time(minCycles * eff)}</b>`;
+    return `📦 ${parts.join(' · ')} · ${empty}`;
+  }
   // ETA line for combat: time to next level of the trained style skill
   function combatEtaLine(m) {
     const kps = playerDps(m) / m.hp;                 // kills per second
@@ -725,6 +827,7 @@
         <div class="progress-bar" style="height:8px;margin-top:4px"><div class="progress-fill" style="width:${b.pct}%;background:var(--accent)"></div></div>
         <div class="progress-bar" style="height:5px;margin-top:4px"><div class="progress-fill green" style="width:${Math.min(100, progress / eff * 100)}%"></div></div>
         <div style="font-size:12px;color:var(--text2);margin-top:6px">${skillEtaLine(a)}</div>
+        ${a.inputs ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${inputsLine(a)}</div>` : ''}
         <div style="font-size:11px;color:var(--text2);margin-top:2px">🎯 Mastery Lv.${masteryLevel(a.id)}/${MASTERY_CAP} · ${Math.round(masterySpeed(a.id) * 100)}% faster · ${Math.round(masteryDouble(a.id) * 100)}% double</div>`;
     }
   }
@@ -738,29 +841,86 @@
   }
 
   // Skills tab: each non-combat skill with its actions
+  // Skills that have trainable actions (the picker entries)
+  const TRAINABLE = SKILLS.filter(s => ACTIONS.some(a => a.skill === s.id));
+  let selectedSkill = localStorage.getItem('rl_skill') || 'woodcutting';
+  if (!TRAINABLE.some(s => s.id === selectedSkill)) selectedSkill = 'woodcutting';
+  window.IdleRealm_pickSkill = function(id) { selectedSkill = id; localStorage.setItem('rl_skill', id); renderSkillsTab(); };
+
   function renderSkillsTab() {
     const list = document.getElementById('rl-content');
     if (!list || activeTab !== 'skills') return;
-    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
-    SKILLS.filter(s => s.kind !== 'combat').forEach(s => {
-      const b = xpBar(s.id);
-      html += `<div class="menu-section-title" style="padding:8px 2px 2px">${s.icon} ${s.name} <span style="color:var(--text2);font-weight:400">Lv.${b.lvl}</span>
-        <div class="progress-bar" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${b.pct}%;background:var(--accent)"></div></div></div>`;
-      ACTIONS.filter(a => a.skill === s.id).forEach(a => {
-        const locked = skillLevel(s.id) < a.lvl;
-        const active = S.action && S.action.type === 'skill' && S.action.id === a.id;
-        const inputTxt = a.inputs ? Object.keys(a.inputs).map(k => `${a.inputs[k]}× ${itemIcon(k)}`).join(' ') + ' → ' : '';
-        const outTxt = a.item ? itemIcon(a.item) + ' ' + itemName(a.item) : a.output ? itemIcon(a.output) + ' ' + itemName(a.output) : 'XP only';
-        html += `<button class="upgrade-item ${active ? '' : (locked ? 'locked' : 'can-buy')}" onclick="IdleRealm_selectAction('${a.id}')" style="${active ? 'border-color:var(--accent)' : ''}">
-            <div class="upg-icon">${a.icon}</div>
-            <div class="upg-info">
-              <div class="upg-name">${a.name} ${active ? '<span class="text-accent" style="font-size:11px">● active</span>' : ''}</div>
-              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Lv.${a.lvl}` : `${inputTxt}${outTxt}`}</div>
-              ${!locked && masteryLevel(a.id) > 0 ? `<div style="font-size:11px;color:var(--accent)">🎯 Mastery ${masteryLevel(a.id)}</div>` : ''}
-            </div>
-            <div style="text-align:right;flex-shrink:0;font-size:12px"><div class="text-green">+${a.xp} xp</div><div style="color:var(--text2)">${a.time.toFixed(1)}s</div></div>
-          </button>`;
-      });
+    // Skill picker (acts as a sidebar/dropdown): one chip per trainable skill
+    let html = '<div style="padding:8px 10px 0">';
+    html += `<div style="display:flex;gap:6px;flex-wrap:wrap">${TRAINABLE.map(s => {
+      const active = s.id === selectedSkill;
+      return `<button class="buy-amt-btn ${active ? 'active' : ''}" onclick="IdleRealm_pickSkill('${s.id}')">${s.icon} ${s.name} <span style="opacity:.7">${skillLevel(s.id)}</span></button>`;
+    }).join('')}</div></div>`;
+    // Selected skill's actions only
+    const s = SKILL[selectedSkill];
+    const b = xpBar(s.id);
+    html += '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
+    html += `<div class="menu-section-title" style="padding:2px 2px">${s.icon} ${s.name} <span style="color:var(--text2);font-weight:400">Lv.${b.lvl}${b.lvl < MAX_LEVEL ? ` · ${Fmt.format(b.xp)}/${Fmt.format(b.next)} xp` : ' · MAX'}</span>
+      <div class="progress-bar" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${b.pct}%;background:var(--accent)"></div></div></div>`;
+    ACTIONS.filter(a => a.skill === s.id).forEach(a => {
+      const locked = skillLevel(s.id) < a.lvl;
+      const active = S.action && S.action.type === 'skill' && S.action.id === a.id;
+      const inputTxt = a.inputs ? Object.keys(a.inputs).map(k => `${a.inputs[k]}× ${itemIcon(k)}(${Fmt.format(bankCount(k))})`).join(' ') + ' → ' : '';
+      const outTxt = a.item ? itemIcon(a.item) + ' ' + itemName(a.item) : a.output ? itemIcon(a.output) + ' ' + itemName(a.output) : 'XP only';
+      html += `<button class="upgrade-item ${active ? '' : (locked ? 'locked' : 'can-buy')}" onclick="IdleRealm_selectAction('${a.id}')" style="${active ? 'border-color:var(--accent)' : ''}">
+          <div class="upg-icon">${a.icon}</div>
+          <div class="upg-info">
+            <div class="upg-name">${a.name} ${active ? '<span class="text-accent" style="font-size:11px">● active</span>' : ''}</div>
+            <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Lv.${a.lvl}` : `${inputTxt}${outTxt}`}</div>
+            ${!locked && masteryLevel(a.id) > 0 ? `<div style="font-size:11px;color:var(--accent)">🎯 Mastery ${masteryLevel(a.id)}</div>` : ''}
+          </div>
+          <div style="text-align:right;flex-shrink:0;font-size:12px"><div class="text-green">+${a.xp} xp</div><div style="color:var(--text2)">${a.time.toFixed(1)}s</div></div>
+        </button>`;
+    });
+    html += '</div>';
+    list.innerHTML = html;
+  }
+
+  function renderSlayerTab() {
+    const list = document.getElementById('rl-content');
+    if (!list || activeTab !== 'slayer') return;
+    const sl = S.slayer;
+    const b = xpBar('slayer');
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:8px">';
+    html += `<div class="menu-section-title" style="padding:2px 2px">💀 Slayer <span style="color:var(--text2);font-weight:400">Lv.${b.lvl}</span>
+      <div class="progress-bar" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${b.pct}%;background:var(--red)"></div></div></div>`;
+    // Current task card
+    if (sl.task && sl.left > 0) {
+      const m = MONSTER[sl.task];
+      const pct = sl.total ? (sl.total - sl.left) / sl.total * 100 : 0;
+      const fighting = S.action && S.action.type === 'combat' && S.action.id === sl.task;
+      html += `<div style="background:var(--bg2);border:1px solid var(--red);border-radius:var(--radius-sm);padding:12px">
+          <div style="font-size:14px;font-weight:600">${m.icon} Slay ${m.name}</div>
+          <div style="font-size:12px;color:var(--text2);margin:2px 0 6px"><b>${sl.left}</b> of ${sl.total} remaining</div>
+          <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:${pct}%;background:var(--red)"></div></div>
+          <button class="btn btn-primary mt-8" onclick="IdleRealm_fight('${sl.task}')">${fighting ? '⚔️ Fighting…' : '⚔️ Fight this task'}</button>
+        </div>`;
+    } else {
+      html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
+          <div style="font-size:13px;color:var(--text2)">No active task. Take one for Slayer XP, bonus coins and Slayer points.</div>
+          <button class="btn btn-primary mt-8" onclick="IdleRealm_newTask()">💀 New Task</button>
+        </div>`;
+    }
+    html += `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px"><span class="text-muted">Slayer points</span><span class="text-accent">💀 ${Fmt.format(sl.points || 0)} · ${sl.done || 0} tasks done</span></div>`;
+    html += '<div class="menu-section-title" style="padding:6px 2px 2px">Slayer Rewards</div>';
+    SLAYER_REWARDS.forEach(def => {
+      const lvl = slayerLvlOf(def.id);
+      const maxed = lvl >= def.max;
+      const cost = slayerRewardCost(def, lvl);
+      const aff = !maxed && (sl.points || 0) >= cost;
+      html += `<button class="upgrade-item ${maxed ? '' : (aff ? 'can-buy' : 'locked')}" ${maxed ? '' : `onclick="IdleRealm_buySlayer('${def.id}')"`}>
+          <div class="upg-icon">${def.icon}</div>
+          <div class="upg-info">
+            <div class="upg-name">${def.name} ${def.max > 1 ? `<span style="color:var(--text2);font-size:12px">Lv.${lvl}/${def.max}</span>` : (maxed ? '<span style="color:var(--green);font-size:12px">✓</span>' : '')}</div>
+            <div style="font-size:12px;color:var(--text2)">${def.fmt(Math.max(1, lvl))}</div>
+          </div>
+          <div class="text-accent" style="font-size:13px;flex-shrink:0">${maxed ? 'Owned' : '💀 ' + cost}</div>
+        </button>`;
     });
     html += '</div>';
     list.innerHTML = html;
@@ -810,6 +970,7 @@
         if (it.slot === 'weapon') sub = `+${it.acc} acc / +${it.str} str`;
         else if (it.slot === 'armor') sub = `+${it.def} def`;
         else if (it.slot === 'tool') sub = `+${Math.round(it.speed * 100)}% gather`;
+        else if (it.slot === 'cape') sub = `+${Math.round((it.gxp||0)*100)}% XP` + (it.perkSkill === 'all' ? ' + all perks' : ` + ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
         else if (it.slot === 'amulet') sub = [it.acc?`+${it.acc} acc`:'', it.str?`+${it.str} str`:'', it.gspeed?`+${Math.round(it.gspeed*100)}% gather`:'', it.rare?`+${Math.round(it.rare*100)}% rare drops`:''].filter(Boolean).join(', ');
       }
       else if (it.type === 'food') sub = `heals ${foodHeal(id)}`;
@@ -832,9 +993,10 @@
     const list = document.getElementById('rl-content');
     if (!list || activeTab !== 'stats') return;
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:8px">';
-    const eq = ['weapon', 'armor', 'tool', 'amulet'].map(sl => { const it = equippedItem(sl); return `${sl}: ${it ? it.icon + ' ' + it.name : '—'}`; }).join(' · ');
+    const eq = ['weapon', 'armor', 'tool', 'amulet', 'cape'].map(sl => { const it = equippedItem(sl); return `${sl}: ${it ? it.icon + ' ' + it.name : '—'}`; }).join(' · ');
     html += `<div style="font-size:12px;color:var(--text2)">Equipped — ${eq}</div>`;
     html += `<div class="stat-row"><span class="text-muted">Combat level</span><span class="text-accent">${combatLevel()}</span></div>`;
+    html += `<div class="stat-row"><span class="text-muted">Slayer points · tasks</span><span>💀 ${Fmt.format((S.slayer&&S.slayer.points)||0)} · ${(S.slayer&&S.slayer.done)||0}</span></div>`;
     html += `<div class="stat-row"><span class="text-muted">Total level</span><span>${totalLevel()} / ${SKILLS.length * 99}</span></div>`;
     html += `<div class="stat-row"><span class="text-muted">Max hit / Max HP</span><span>${playerMaxHit()} / ${maxHp()}</span></div>`;
     html += `<div class="stat-row"><span class="text-muted">Monsters slain</span><span>${Fmt.format(S.kills || 0)}</span></div>`;
@@ -876,6 +1038,7 @@
     renderTopbar(); renderActiveHeader();
     if (activeTab === 'skills') renderSkillsTab();
     else if (activeTab === 'combat') renderCombatTab();
+    else if (activeTab === 'slayer') renderSlayerTab();
     else if (activeTab === 'bank') renderBankTab();
     else if (activeTab === 'store') renderStoreTab();
     else if (activeTab === 'stats') renderStatsTab();
@@ -891,7 +1054,8 @@
         <p class="mt-8"><b>Combat</b> uses your gear and auto-eats food when hurt. Pick a <b>style</b> — Accurate (Attack), Aggressive (Strength) or Defensive (Defence) — to choose which combat skill levels. Run out of food and you retreat, so keep cooking!</p>
         <p class="mt-8"><b>Rare drops:</b> gathering can yield uncut <b>gems</b> 🔹 (mining is best). Cut them at the forge and craft <b>📿 amulets</b> — a separate equip slot and a real build choice (Power, Accuracy, Foraging, or the dragonstone-only <b>Glory</b>).</p>
         <p class="mt-8"><b>Synergies:</b> smithed <b>tools</b> + an Amulet of Foraging speed gathering (and boost rare drops); <b>Mining</b> level speeds Smithing; <b>Firemaking</b> + Cooking cut burning; and your <b>Cooking</b> level makes every food heal more. Everything feeds everything.</p>
-        <p class="mt-8">Every skill grinds to <b>level 99</b> on the classic curve, and loot is <b>rare</b> on purpose — this is a long game. Have fun.</p>
+        <p class="mt-8"><b>💀 Slayer:</b> take a <b>task</b> (kill N of a monster) for Slayer XP, bonus coins and Slayer points — spend points on permanent perks. <b>🎽 Skill capes</b> drop when you hit <b>99</b> in a skill: a cape slot giving +5% XP plus a perk for its skill (Max Cape for all-99).</p>
+        <p class="mt-8"><b>Mastery</b> rises per action (faster + double yields), and the <b>🛒 Store</b> spends coins on permanent boosts. Every skill grinds to <b>99</b> and loot is <b>rare</b> on purpose — a long game. Have fun.</p>
       `,
       actions: [{ label: 'Got it', cls: 'btn-primary' }]
     });
@@ -924,6 +1088,7 @@
           <div class="tab-bar" style="overflow-x:auto;white-space:nowrap;display:flex">
             <button class="tab-btn" data-tab="skills" style="min-width:72px" onclick="IdleRealm_tab('skills',this)">🛠️ Skills</button>
             <button class="tab-btn" data-tab="combat" style="min-width:72px" onclick="IdleRealm_tab('combat',this)">⚔️ Combat</button>
+            <button class="tab-btn" data-tab="slayer" style="min-width:72px" onclick="IdleRealm_tab('slayer',this)">💀 Slayer</button>
             <button class="tab-btn" data-tab="bank"   style="min-width:64px" onclick="IdleRealm_tab('bank',this)">🎒 Bank</button>
             <button class="tab-btn" data-tab="store"  style="min-width:64px" onclick="IdleRealm_tab('store',this)">🛒 Store</button>
             <button class="tab-btn" data-tab="stats"  style="min-width:64px" onclick="IdleRealm_tab('stats',this)">📊 Stats</button>
