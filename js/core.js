@@ -434,6 +434,7 @@ const SettingsScreen = (() => {
   const GAMES = [
     { id: 'clicker', icon: '🍪', name: 'Cookie Clicker' },
     { id: 'dungeon', icon: '⚔️', name: 'Idle Dungeon' },
+    { id: 'defense', icon: '🛰️', name: 'Orbital Defense' },
   ];
   function render() {
     const list = document.getElementById('settings-list');
