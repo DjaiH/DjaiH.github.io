@@ -112,6 +112,7 @@
   let S = null, tickFn = null, autosaveTimer = null;
   // Live combat (transient, rebuilt on enter — never saved)
   let enemies = [], fireTimer = 0, spawnTimer = 0, spawnLeft = 0, invuln = 0;
+  let shots = [];                  // transient projectile visuals
   let failsafeLeft = 0;            // Failsafe charges remaining this wave
   let cd = { over: 0, repair: 0, nova: 0 };
   let renderThrottle = 0, nextEnemyId = 1;
@@ -318,6 +319,10 @@
     if (e.hp <= 0) return true;
     return false;
   }
+  function addShot(toX, toTop, crit) {
+    shots.push({ toX, toTop: Math.min(90, toTop), t: 0, dur: 0.13, crit: !!crit });
+    if (shots.length > 40) shots.splice(0, shots.length - 40);
+  }
   function fireVolley() {
     if (!enemies.length) return;
     // Target the frontmost (closest to core) enemies
@@ -329,6 +334,7 @@
       const isCrit = Math.random() * 100 < critChance(S);
       const dmg = Math.max(1, Math.floor(dmg0 * (isCrit ? critPower(S) : 1)));
       damageEnemy(e, dmg, isCrit);
+      addShot(e.lane, e.pos * 90, isCrit);
     }
   }
 
@@ -377,6 +383,9 @@
       if (e.hp <= 0) { onEnemyKilled(e); killedReward = true; return false; }
       return true;
     });
+
+    // Advance projectile visuals
+    if (shots.length) { for (const s of shots) s.t += dt; shots = shots.filter(s => s.t < s.dur); }
 
     // Shield regen
     const ms = maxShield(S);
@@ -432,6 +441,7 @@
     const isCrit = Math.random() * 100 < critChance(S);
     const dmg = Math.max(1, Math.floor(turretDamage(S) * 3 * (isCrit ? critPower(S) : 1)));
     front.hp -= dmg; front.flash = 0.2;
+    addShot(front.lane, front.pos * 90, isCrit);
     if (ev) floatNum(ev.clientX, ev.clientY, (isCrit ? '💥' : '🎯') + Fmt.format(dmg), isCrit ? '#f5c542' : '#fff');
     Haptics.vibrate(20);
     if (front.hp <= 0) { enemies = enemies.filter(e => e !== front); onEnemyKilled(front); }
@@ -653,7 +663,17 @@
   function renderLane() {
     const lane = document.getElementById('df-lane');
     if (!lane) return;
-    let html = '';
+    // The turret lives at the bottom of the lane and must be re-rendered each
+    // frame (we replace the lane's contents), with a muzzle flash while firing.
+    const firing = shots.some(s => s.t < 0.05);
+    let html = `<div id="df-turret" class="${firing ? 'firing' : ''}">🛰️</div>`;
+    // Projectile tracers travelling from the turret to their target
+    for (const s of shots) {
+      const p = s.t / s.dur;
+      const x = 50 + (s.toX - 50) * p;
+      const top = 94 + (s.toTop - 94) * p;
+      html += `<div class="df-shot ${s.crit ? 'crit' : ''}" style="left:${x}%;top:${top}%"></div>`;
+    }
     for (const e of enemies) {
       const top = Math.min(90, e.pos * 90);
       const hpPct = Math.max(0, e.hp / e.maxHp * 100);
@@ -908,7 +928,11 @@
         .df-enemy-icon { font-size:30px; line-height:1; }
         .df-ehp { width:34px; height:3px; background:rgba(255,255,255,0.18); border-radius:2px; margin-top:1px; overflow:hidden; }
         .df-ehp > div { height:100%; background:var(--red); }
-        #df-turret { position:absolute; bottom:2px; left:50%; transform:translateX(-50%); font-size:40px; pointer-events:none; filter:drop-shadow(0 0 6px var(--accent)); }
+        #df-turret { position:absolute; bottom:2px; left:50%; transform:translateX(-50%); font-size:40px; pointer-events:none; filter:drop-shadow(0 0 6px var(--accent)); transition:filter 0.05s; }
+        #df-turret.firing { filter:drop-shadow(0 0 12px var(--gold)) brightness(1.3); }
+        .df-shot { position:absolute; width:5px; height:13px; margin:-6px 0 0 -2px; border-radius:3px; pointer-events:none;
+                   background:linear-gradient(#fff, var(--accent)); box-shadow:0 0 6px var(--accent); }
+        .df-shot.crit { background:linear-gradient(#fff, var(--gold)); box-shadow:0 0 7px var(--gold); }
         #df-shield-wrap { padding:6px 12px 4px; }
         #df-shield-text { font-size:11px; color:var(--text2); }
         #df-abilities { display:flex; gap:8px; padding:6px 12px 10px; }
@@ -933,9 +957,7 @@
             <div id="df-resources"></div>
             <div id="df-level"></div>
           </div>
-          <div id="df-lane" onclick="DefenseGame_tap(event)">
-            <div id="df-turret">🛰️</div>
-          </div>
+          <div id="df-lane" onclick="DefenseGame_tap(event)"></div>
           <div id="df-shield-wrap">
             <div class="progress-bar" style="height:9px"><div id="df-shield-bar" class="progress-fill green" style="width:100%"></div></div>
             <div id="df-shield-text" style="margin-top:2px"></div>
@@ -965,7 +987,7 @@
       registerAchievements();
       syncTabButtons();
       cd = { over: 0, repair: 0, nova: 0 };
-      invuln = 0;
+      invuln = 0; shots = [];
       startWave(S.wave);
       renderAll();
       checkAchievements();
@@ -976,7 +998,7 @@
       saveGame();
       Ticker.remove(tickFn);
       clearInterval(autosaveTimer);
-      enemies = [];
+      enemies = []; shots = [];
     }
   });
 
