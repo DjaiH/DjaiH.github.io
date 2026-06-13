@@ -211,7 +211,7 @@ const Router = (() => {
   }
 
   function updateMenuMeta() {
-    const games = ['clicker', 'dungeon', 'defense'];
+    const games = ['clicker', 'dungeon'];
     games.forEach(g => {
       const meta = document.getElementById('card-meta-' + g);
       if (!meta) return;
@@ -246,7 +246,7 @@ const Router = (() => {
    SAVE SYSTEM
    ════════════════════════════════════════════════════════════════ */
 const SaveSystem = (() => {
-  const GAMES = ['clicker', 'dungeon', 'defense'];
+  const GAMES = ['clicker', 'dungeon'];
   const MIGRATIONS = {}; // keyed by game id, value = { v1_to_v2: fn, ... }
 
   function registerMigrations(gameId, migrations) {
@@ -433,8 +433,7 @@ const SettingsScreen = (() => {
   // Games that can be reset individually
   const GAMES = [
     { id: 'clicker', icon: '🍪', name: 'Cookie Clicker' },
-    { id: 'dungeon', icon: '⚔️', name: 'Idle Dungeon' },
-    { id: 'defense', icon: '🛰️', name: 'Orbital Defense' },
+    { id: 'dungeon', icon: '⚔️', name: 'Idle Realm' },
   ];
   function render() {
     const list = document.getElementById('settings-list');
