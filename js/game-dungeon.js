@@ -45,47 +45,68 @@
   /* ── Items ───────────────────────────────────────────────────── */
   const ITEMS = {
     coins:       { name:'Coins',          icon:'🪙', type:'currency' },
-    // logs
+    // logs (8 tiers)
     log_normal:  { name:'Logs',           icon:'🪵', type:'log',  value:2 },
     log_oak:     { name:'Oak Logs',       icon:'🪵', type:'log',  value:6 },
     log_willow:  { name:'Willow Logs',    icon:'🪵', type:'log',  value:14 },
-    log_maple:   { name:'Maple Logs',     icon:'🪵', type:'log',  value:28 },
-    // raw fish
+    log_teak:    { name:'Teak Logs',      icon:'🪵', type:'log',  value:22 },
+    log_maple:   { name:'Maple Logs',     icon:'🪵', type:'log',  value:35 },
+    log_mahogany:{ name:'Mahogany Logs',  icon:'🪵', type:'log',  value:55 },
+    log_yew:     { name:'Yew Logs',       icon:'🪵', type:'log',  value:90 },
+    log_magic:   { name:'Magic Logs',     icon:'🪵', type:'log',  value:150 },
+    // raw fish (8 tiers)
     fish_shrimp: { name:'Raw Shrimp',     icon:'🦐', type:'raw',  value:2 },
+    fish_sardine:{ name:'Raw Sardine',    icon:'🐟', type:'raw',  value:4 },
     fish_trout:  { name:'Raw Trout',      icon:'🐟', type:'raw',  value:6 },
     fish_salmon: { name:'Raw Salmon',     icon:'🐟', type:'raw',  value:14 },
+    fish_tuna:   { name:'Raw Tuna',       icon:'🐟', type:'raw',  value:22 },
     fish_lobster:{ name:'Raw Lobster',    icon:'🦞', type:'raw',  value:30 },
     fish_sword:  { name:'Raw Swordfish',  icon:'🐠', type:'raw',  value:55 },
+    fish_shark:  { name:'Raw Shark',      icon:'🦈', type:'raw',  value:95 },
     // cooked food (heal in combat)
     food_shrimp: { name:'Shrimp',         icon:'🦐', type:'food', heal:30,  value:4 },
+    food_sardine:{ name:'Sardine',        icon:'🐟', type:'food', heal:45,  value:7 },
     food_trout:  { name:'Trout',          icon:'🐟', type:'food', heal:70,  value:10 },
     food_salmon: { name:'Salmon',         icon:'🐟', type:'food', heal:120, value:22 },
-    food_lobster:{ name:'Lobster',        icon:'🦞', type:'food', heal:180, value:45 },
-    food_sword:  { name:'Swordfish',      icon:'🐠', type:'food', heal:260, value:80 },
-    // ores
+    food_tuna:   { name:'Tuna',           icon:'🐟', type:'food', heal:160, value:34 },
+    food_lobster:{ name:'Lobster',        icon:'🦞', type:'food', heal:200, value:45 },
+    food_sword:  { name:'Swordfish',      icon:'🐠', type:'food', heal:280, value:80 },
+    food_shark:  { name:'Shark',          icon:'🦈', type:'food', heal:400, value:150 },
+    // ores (8 nodes)
     ore_copper:  { name:'Copper Ore',     icon:'🟤', type:'ore',  value:3 },
     ore_tin:     { name:'Tin Ore',        icon:'⚪', type:'ore',  value:3 },
     ore_iron:    { name:'Iron Ore',       icon:'🔴', type:'ore',  value:10 },
     ore_coal:    { name:'Coal',           icon:'⚫', type:'ore',  value:16 },
+    ore_gold:    { name:'Gold Ore',       icon:'🟡', type:'ore',  value:70 },
     ore_mithril: { name:'Mithril Ore',    icon:'🔵', type:'ore',  value:48 },
-    // bars
+    ore_adamantite:{ name:'Adamantite Ore',icon:'🟩', type:'ore', value:110 },
+    ore_runite:  { name:'Runite Ore',     icon:'🟦', type:'ore',  value:260 },
+    // bars (6 metal tiers)
     bar_bronze:  { name:'Bronze Bar',     icon:'🟫', type:'bar',  value:8 },
     bar_iron:    { name:'Iron Bar',       icon:'⬜', type:'bar',  value:24 },
     bar_steel:   { name:'Steel Bar',      icon:'◻️', type:'bar',  value:60 },
     bar_mithril: { name:'Mithril Bar',    icon:'🟦', type:'bar',  value:160 },
-    // gear (slot weapon/armor/tool)
+    bar_adamant: { name:'Adamant Bar',    icon:'🟩', type:'bar',  value:360 },
+    bar_rune:    { name:'Rune Bar',       icon:'🟪', type:'bar',  value:800 },
+    // gear (slot weapon/armor/tool) — 6 metal tiers
     weapon_bronze: { name:'Bronze Sword',     icon:'🗡️', type:'gear', slot:'weapon', tier:1, acc:6,  str:6,  value:40 },
     weapon_iron:   { name:'Iron Sword',       icon:'🗡️', type:'gear', slot:'weapon', tier:2, acc:12, str:11, value:120 },
     weapon_steel:  { name:'Steel Sword',      icon:'⚔️', type:'gear', slot:'weapon', tier:3, acc:22, str:20, value:340 },
     weapon_mithril:{ name:'Mithril Sword',    icon:'⚔️', type:'gear', slot:'weapon', tier:4, acc:38, str:34, value:900 },
+    weapon_adamant:{ name:'Adamant Sword',    icon:'⚔️', type:'gear', slot:'weapon', tier:5, acc:58, str:52, value:2200 },
+    weapon_rune:   { name:'Rune Sword',       icon:'⚔️', type:'gear', slot:'weapon', tier:6, acc:82, str:74, value:5000 },
     armor_bronze:  { name:'Bronze Platebody', icon:'🛡️', type:'gear', slot:'armor',  tier:1, def:10, value:50 },
     armor_iron:    { name:'Iron Platebody',   icon:'🛡️', type:'gear', slot:'armor',  tier:2, def:20, value:150 },
     armor_steel:   { name:'Steel Platebody',  icon:'🛡️', type:'gear', slot:'armor',  tier:3, def:36, value:420 },
     armor_mithril: { name:'Mithril Platebody',icon:'🛡️', type:'gear', slot:'armor',  tier:4, def:60, value:1100 },
-    tool_bronze:   { name:'Bronze Toolkit',   icon:'🛠️', type:'gear', slot:'tool',   tier:1, speed:0.08, value:60 },
-    tool_iron:     { name:'Iron Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:2, speed:0.16, value:180 },
-    tool_steel:    { name:'Steel Toolkit',    icon:'🛠️', type:'gear', slot:'tool',   tier:3, speed:0.26, value:480 },
-    tool_mithril:  { name:'Mithril Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:4, speed:0.40, value:1300 },
+    armor_adamant: { name:'Adamant Platebody',icon:'🛡️', type:'gear', slot:'armor',  tier:5, def:92, value:2600 },
+    armor_rune:    { name:'Rune Platebody',   icon:'🛡️', type:'gear', slot:'armor',  tier:6, def:132,value:6000 },
+    tool_bronze:   { name:'Bronze Toolkit',   icon:'🛠️', type:'gear', slot:'tool',   tier:1, speed:0.06, value:60 },
+    tool_iron:     { name:'Iron Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:2, speed:0.12, value:180 },
+    tool_steel:    { name:'Steel Toolkit',    icon:'🛠️', type:'gear', slot:'tool',   tier:3, speed:0.20, value:480 },
+    tool_mithril:  { name:'Mithril Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:4, speed:0.30, value:1300 },
+    tool_adamant:  { name:'Adamant Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:5, speed:0.42, value:3000 },
+    tool_rune:     { name:'Rune Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:6, speed:0.55, value:6500 },
     // uncut gems — rare gathering drops
     usapphire:   { name:'Uncut Sapphire', icon:'🔹', type:'uncut', value:60 },
     uemerald:    { name:'Uncut Emerald',  icon:'🟢', type:'uncut', value:120 },
@@ -125,40 +146,59 @@
         type gather  → produces 1 item every `time` s
         type produce → consumes `inputs`, makes `output` (cooking can burn) */
   const ACTIONS = [
-    // Woodcutting
-    { id:'wc_normal', skill:'woodcutting', name:'Normal Tree', icon:'🌳', lvl:1,  xp:8,  time:3.0, item:'log_normal' },
-    { id:'wc_oak',    skill:'woodcutting', name:'Oak Tree',    icon:'🌳', lvl:15, xp:16, time:3.6, item:'log_oak' },
-    { id:'wc_willow', skill:'woodcutting', name:'Willow Tree', icon:'🌳', lvl:30, xp:32, time:4.2, item:'log_willow' },
-    { id:'wc_maple',  skill:'woodcutting', name:'Maple Tree',  icon:'🌳', lvl:45, xp:55, time:5.0, item:'log_maple' },
-    // Fishing
-    { id:'fs_shrimp', skill:'fishing', name:'Net Shrimp',   icon:'🦐', lvl:1,  xp:7,  time:3.0, item:'fish_shrimp' },
-    { id:'fs_trout',  skill:'fishing', name:'Fly Trout',    icon:'🐟', lvl:15, xp:18, time:3.6, item:'fish_trout' },
-    { id:'fs_salmon', skill:'fishing', name:'Fly Salmon',   icon:'🐟', lvl:30, xp:35, time:4.2, item:'fish_salmon' },
-    { id:'fs_lobster',skill:'fishing', name:'Cage Lobster', icon:'🦞', lvl:45, xp:60, time:5.0, item:'fish_lobster' },
-    { id:'fs_sword',  skill:'fishing', name:'Harpoon Swordfish', icon:'🐠', lvl:60, xp:90, time:5.6, item:'fish_sword' },
-    // Mining
-    { id:'mn_copper', skill:'mining', name:'Copper Vein', icon:'🟤', lvl:1,  xp:8,  time:3.0, item:'ore_copper' },
-    { id:'mn_tin',    skill:'mining', name:'Tin Vein',    icon:'⚪', lvl:1,  xp:8,  time:3.0, item:'ore_tin' },
-    { id:'mn_iron',   skill:'mining', name:'Iron Vein',   icon:'🔴', lvl:15, xp:18, time:3.6, item:'ore_iron' },
-    { id:'mn_coal',   skill:'mining', name:'Coal Seam',   icon:'⚫', lvl:30, xp:30, time:4.2, item:'ore_coal' },
-    { id:'mn_mithril',skill:'mining', name:'Mithril Vein',icon:'🔵', lvl:50, xp:70, time:5.4, item:'ore_mithril' },
-    // Firemaking (burns logs for XP)
-    { id:'fm_normal', skill:'firemaking', name:'Burn Logs',        icon:'🔥', lvl:1,  xp:12, time:2.2, inputs:{ log_normal:1 } },
-    { id:'fm_oak',    skill:'firemaking', name:'Burn Oak Logs',    icon:'🔥', lvl:15, xp:24, time:2.6, inputs:{ log_oak:1 } },
-    { id:'fm_willow', skill:'firemaking', name:'Burn Willow Logs', icon:'🔥', lvl:30, xp:45, time:3.0, inputs:{ log_willow:1 } },
-    { id:'fm_maple',  skill:'firemaking', name:'Burn Maple Logs',  icon:'🔥', lvl:45, xp:75, time:3.4, inputs:{ log_maple:1 } },
-    // Cooking (raw → food, can burn)
-    { id:'ck_shrimp', skill:'cooking', name:'Cook Shrimp',    icon:'🦐', lvl:1,  xp:10, time:2.2, inputs:{ fish_shrimp:1 },  output:'food_shrimp',  burn:0.30 },
-    { id:'ck_trout',  skill:'cooking', name:'Cook Trout',     icon:'🐟', lvl:15, xp:22, time:2.6, inputs:{ fish_trout:1 },   output:'food_trout',   burn:0.28 },
-    { id:'ck_salmon', skill:'cooking', name:'Cook Salmon',    icon:'🐟', lvl:30, xp:40, time:3.0, inputs:{ fish_salmon:1 },  output:'food_salmon',  burn:0.26 },
-    { id:'ck_lobster',skill:'cooking', name:'Cook Lobster',   icon:'🦞', lvl:45, xp:65, time:3.4, inputs:{ fish_lobster:1 }, output:'food_lobster', burn:0.24 },
-    { id:'ck_sword',  skill:'cooking', name:'Cook Swordfish', icon:'🐠', lvl:60, xp:95, time:3.8, inputs:{ fish_sword:1 },   output:'food_sword',   burn:0.22 },
-    // Smithing — smelt bars
-    { id:'sm_bronze', skill:'smithing', name:'Smelt Bronze', icon:'🟫', lvl:1,  xp:10, time:3.0, inputs:{ ore_copper:1, ore_tin:1 }, output:'bar_bronze' },
-    { id:'sm_iron',   skill:'smithing', name:'Smelt Iron',   icon:'⬜', lvl:15, xp:20, time:3.4, inputs:{ ore_iron:1 },             output:'bar_iron' },
-    { id:'sm_steel',  skill:'smithing', name:'Smelt Steel',  icon:'◻️', lvl:30, xp:35, time:3.8, inputs:{ ore_iron:1, ore_coal:2 }, output:'bar_steel' },
-    { id:'sm_mithril',skill:'smithing', name:'Smelt Mithril',icon:'🟦', lvl:50, xp:70, time:4.6, inputs:{ ore_mithril:1, ore_coal:4 }, output:'bar_mithril' },
-    // Smithing — forge gear
+    // Woodcutting (8)
+    { id:'wc_normal',  skill:'woodcutting', name:'Normal Tree',  icon:'🌳', lvl:1,  xp:8,   time:3.0, item:'log_normal' },
+    { id:'wc_oak',     skill:'woodcutting', name:'Oak Tree',     icon:'🌳', lvl:15, xp:16,  time:3.6, item:'log_oak' },
+    { id:'wc_willow',  skill:'woodcutting', name:'Willow Tree',  icon:'🌳', lvl:30, xp:32,  time:4.2, item:'log_willow' },
+    { id:'wc_teak',    skill:'woodcutting', name:'Teak Tree',    icon:'🌳', lvl:36, xp:45,  time:4.6, item:'log_teak' },
+    { id:'wc_maple',   skill:'woodcutting', name:'Maple Tree',   icon:'🌳', lvl:45, xp:62,  time:5.0, item:'log_maple' },
+    { id:'wc_mahogany',skill:'woodcutting', name:'Mahogany Tree',icon:'🌲', lvl:55, xp:88,  time:5.6, item:'log_mahogany' },
+    { id:'wc_yew',     skill:'woodcutting', name:'Yew Tree',     icon:'🌲', lvl:70, xp:135, time:6.4, item:'log_yew' },
+    { id:'wc_magic',   skill:'woodcutting', name:'Magic Tree',   icon:'🎄', lvl:85, xp:220, time:7.4, item:'log_magic' },
+    // Fishing (8)
+    { id:'fs_shrimp',  skill:'fishing', name:'Net Shrimp',       icon:'🦐', lvl:1,  xp:7,   time:3.0, item:'fish_shrimp' },
+    { id:'fs_sardine', skill:'fishing', name:'Bait Sardine',     icon:'🐟', lvl:5,  xp:12,  time:3.2, item:'fish_sardine' },
+    { id:'fs_trout',   skill:'fishing', name:'Fly Trout',        icon:'🐟', lvl:20, xp:24,  time:3.8, item:'fish_trout' },
+    { id:'fs_salmon',  skill:'fishing', name:'Fly Salmon',       icon:'🐟', lvl:30, xp:38,  time:4.2, item:'fish_salmon' },
+    { id:'fs_tuna',    skill:'fishing', name:'Harpoon Tuna',     icon:'🐟', lvl:40, xp:55,  time:4.8, item:'fish_tuna' },
+    { id:'fs_lobster', skill:'fishing', name:'Cage Lobster',     icon:'🦞', lvl:45, xp:68,  time:5.2, item:'fish_lobster' },
+    { id:'fs_sword',   skill:'fishing', name:'Harpoon Swordfish',icon:'🐠', lvl:55, xp:95,  time:5.8, item:'fish_sword' },
+    { id:'fs_shark',   skill:'fishing', name:'Harpoon Shark',    icon:'🦈', lvl:76, xp:160, time:6.8, item:'fish_shark' },
+    // Mining (8)
+    { id:'mn_copper',  skill:'mining', name:'Copper Vein',   icon:'🟤', lvl:1,  xp:8,   time:3.0, item:'ore_copper' },
+    { id:'mn_tin',     skill:'mining', name:'Tin Vein',      icon:'⚪', lvl:1,  xp:8,   time:3.0, item:'ore_tin' },
+    { id:'mn_iron',    skill:'mining', name:'Iron Vein',     icon:'🔴', lvl:15, xp:18,  time:3.6, item:'ore_iron' },
+    { id:'mn_coal',    skill:'mining', name:'Coal Seam',     icon:'⚫', lvl:30, xp:30,  time:4.2, item:'ore_coal' },
+    { id:'mn_gold',    skill:'mining', name:'Gold Vein',     icon:'🟡', lvl:40, xp:50,  time:4.8, item:'ore_gold' },
+    { id:'mn_mithril', skill:'mining', name:'Mithril Vein',  icon:'🔵', lvl:50, xp:70,  time:5.4, item:'ore_mithril' },
+    { id:'mn_adamant', skill:'mining', name:'Adamantite Vein',icon:'🟩', lvl:65, xp:110, time:6.2, item:'ore_adamantite' },
+    { id:'mn_runite',  skill:'mining', name:'Runite Vein',   icon:'🟦', lvl:80, xp:180, time:7.2, item:'ore_runite' },
+    // Firemaking (8) — burns logs for XP
+    { id:'fm_normal',  skill:'firemaking', name:'Burn Logs',          icon:'🔥', lvl:1,  xp:12,  time:2.2, inputs:{ log_normal:1 } },
+    { id:'fm_oak',     skill:'firemaking', name:'Burn Oak Logs',      icon:'🔥', lvl:15, xp:24,  time:2.6, inputs:{ log_oak:1 } },
+    { id:'fm_willow',  skill:'firemaking', name:'Burn Willow Logs',   icon:'🔥', lvl:30, xp:45,  time:3.0, inputs:{ log_willow:1 } },
+    { id:'fm_teak',    skill:'firemaking', name:'Burn Teak Logs',     icon:'🔥', lvl:36, xp:60,  time:3.2, inputs:{ log_teak:1 } },
+    { id:'fm_maple',   skill:'firemaking', name:'Burn Maple Logs',    icon:'🔥', lvl:45, xp:82,  time:3.6, inputs:{ log_maple:1 } },
+    { id:'fm_mahogany',skill:'firemaking', name:'Burn Mahogany Logs', icon:'🔥', lvl:55, xp:115, time:4.0, inputs:{ log_mahogany:1 } },
+    { id:'fm_yew',     skill:'firemaking', name:'Burn Yew Logs',      icon:'🔥', lvl:70, xp:175, time:4.6, inputs:{ log_yew:1 } },
+    { id:'fm_magic',   skill:'firemaking', name:'Burn Magic Logs',    icon:'🔥', lvl:85, xp:280, time:5.2, inputs:{ log_magic:1 } },
+    // Cooking (8) — raw → food, can burn
+    { id:'ck_shrimp',  skill:'cooking', name:'Cook Shrimp',    icon:'🦐', lvl:1,  xp:10,  time:2.2, inputs:{ fish_shrimp:1 },  output:'food_shrimp',  burn:0.30 },
+    { id:'ck_sardine', skill:'cooking', name:'Cook Sardine',   icon:'🐟', lvl:5,  xp:16,  time:2.4, inputs:{ fish_sardine:1 }, output:'food_sardine', burn:0.29 },
+    { id:'ck_trout',   skill:'cooking', name:'Cook Trout',     icon:'🐟', lvl:20, xp:28,  time:2.8, inputs:{ fish_trout:1 },   output:'food_trout',   burn:0.27 },
+    { id:'ck_salmon',  skill:'cooking', name:'Cook Salmon',    icon:'🐟', lvl:30, xp:42,  time:3.0, inputs:{ fish_salmon:1 },  output:'food_salmon',  burn:0.25 },
+    { id:'ck_tuna',    skill:'cooking', name:'Cook Tuna',      icon:'🐟', lvl:40, xp:58,  time:3.4, inputs:{ fish_tuna:1 },    output:'food_tuna',    burn:0.24 },
+    { id:'ck_lobster', skill:'cooking', name:'Cook Lobster',   icon:'🦞', lvl:45, xp:72,  time:3.6, inputs:{ fish_lobster:1 }, output:'food_lobster', burn:0.23 },
+    { id:'ck_sword',   skill:'cooking', name:'Cook Swordfish', icon:'🐠', lvl:55, xp:100, time:4.0, inputs:{ fish_sword:1 },   output:'food_sword',   burn:0.22 },
+    { id:'ck_shark',   skill:'cooking', name:'Cook Shark',     icon:'🦈', lvl:80, xp:165, time:4.6, inputs:{ fish_shark:1 },   output:'food_shark',   burn:0.20 },
+    // Smithing — smelt bars (6)
+    { id:'sm_bronze', skill:'smithing', name:'Smelt Bronze', icon:'🟫', lvl:1,  xp:10,  time:3.0, inputs:{ ore_copper:1, ore_tin:1 },     output:'bar_bronze' },
+    { id:'sm_iron',   skill:'smithing', name:'Smelt Iron',   icon:'⬜', lvl:15, xp:20,  time:3.4, inputs:{ ore_iron:1 },                  output:'bar_iron' },
+    { id:'sm_steel',  skill:'smithing', name:'Smelt Steel',  icon:'◻️', lvl:30, xp:35,  time:3.8, inputs:{ ore_iron:1, ore_coal:2 },      output:'bar_steel' },
+    { id:'sm_mithril',skill:'smithing', name:'Smelt Mithril',icon:'🟦', lvl:50, xp:70,  time:4.6, inputs:{ ore_mithril:1, ore_coal:4 },   output:'bar_mithril' },
+    { id:'sm_adamant',skill:'smithing', name:'Smelt Adamant',icon:'🟩', lvl:70, xp:130, time:5.4, inputs:{ ore_adamantite:1, ore_coal:6 },output:'bar_adamant' },
+    { id:'sm_rune',   skill:'smithing', name:'Smelt Runite', icon:'🟪', lvl:85, xp:230, time:6.4, inputs:{ ore_runite:1, ore_coal:8 },    output:'bar_rune' },
+    // Smithing — forge gear (6 tiers × weapon/tool/armor)
     { id:'fg_weapon_bronze', skill:'smithing', name:'Forge Bronze Sword',    icon:'🗡️', lvl:4,  xp:25,  time:4.0, inputs:{ bar_bronze:1 },  output:'weapon_bronze' },
     { id:'fg_tool_bronze',   skill:'smithing', name:'Forge Bronze Toolkit',  icon:'🛠️', lvl:6,  xp:40,  time:4.0, inputs:{ bar_bronze:2 },  output:'tool_bronze' },
     { id:'fg_armor_bronze',  skill:'smithing', name:'Forge Bronze Platebody',icon:'🛡️', lvl:8,  xp:50,  time:4.4, inputs:{ bar_bronze:3 },  output:'armor_bronze' },
@@ -171,6 +211,12 @@
     { id:'fg_weapon_mithril',skill:'smithing', name:'Forge Mithril Sword',   icon:'⚔️', lvl:58, xp:130, time:5.2, inputs:{ bar_mithril:1 }, output:'weapon_mithril' },
     { id:'fg_tool_mithril',  skill:'smithing', name:'Forge Mithril Toolkit', icon:'🛠️', lvl:60, xp:200, time:5.2, inputs:{ bar_mithril:2 }, output:'tool_mithril' },
     { id:'fg_armor_mithril', skill:'smithing', name:'Forge Mithril Platebody',icon:'🛡️',lvl:63, xp:260, time:5.6, inputs:{ bar_mithril:3 }, output:'armor_mithril' },
+    { id:'fg_weapon_adamant',skill:'smithing', name:'Forge Adamant Sword',   icon:'⚔️', lvl:70, xp:220, time:5.6, inputs:{ bar_adamant:1 }, output:'weapon_adamant' },
+    { id:'fg_tool_adamant',  skill:'smithing', name:'Forge Adamant Toolkit', icon:'🛠️', lvl:72, xp:320, time:5.6, inputs:{ bar_adamant:2 }, output:'tool_adamant' },
+    { id:'fg_armor_adamant', skill:'smithing', name:'Forge Adamant Platebody',icon:'🛡️',lvl:75, xp:430, time:6.0, inputs:{ bar_adamant:3 }, output:'armor_adamant' },
+    { id:'fg_weapon_rune',   skill:'smithing', name:'Forge Rune Sword',      icon:'⚔️', lvl:85, xp:380, time:6.0, inputs:{ bar_rune:1 },    output:'weapon_rune' },
+    { id:'fg_tool_rune',     skill:'smithing', name:'Forge Rune Toolkit',    icon:'🛠️', lvl:87, xp:520, time:6.0, inputs:{ bar_rune:2 },    output:'tool_rune' },
+    { id:'fg_armor_rune',    skill:'smithing', name:'Forge Rune Platebody',  icon:'🛡️', lvl:90, xp:700, time:6.4, inputs:{ bar_rune:3 },    output:'armor_rune' },
     // Smithing — cut gems
     { id:'cut_sapphire', skill:'smithing', name:'Cut Sapphire', icon:'🔹', lvl:20, xp:50,  time:3.0, inputs:{ usapphire:1 }, output:'sapphire' },
     { id:'cut_emerald',  skill:'smithing', name:'Cut Emerald',  icon:'🟢', lvl:27, xp:67,  time:3.2, inputs:{ uemerald:1 },  output:'emerald' },
@@ -191,24 +237,40 @@
     { item:'uruby',     chance:0.0007 * mult },
     { item:'udiamond',  chance:0.00025 * mult },
   ];
-  // Mining is the prime gem source; woodcutting/fishing only rarely (bird nests / oysters)
-  [['mn_copper',1],['mn_tin',1],['mn_iron',1.4],['mn_coal',1.8],['mn_mithril',2.6],
-   ['wc_normal',0.4],['wc_oak',0.5],['wc_willow',0.6],['wc_maple',0.7],
-   ['fs_shrimp',0.4],['fs_trout',0.5],['fs_salmon',0.6],['fs_lobster',0.7],['fs_sword',0.8]]
+  // Mining is the prime gem source (gold veins richest); woodcutting (bird nests)
+  // and fishing (oysters) yield gems only rarely. Higher tiers roll a bit better.
+  [['mn_copper',1],['mn_tin',1],['mn_iron',1.4],['mn_coal',1.8],['mn_gold',3.5],['mn_mithril',2.6],['mn_adamant',3.2],['mn_runite',4.0],
+   ['wc_normal',0.4],['wc_oak',0.5],['wc_willow',0.6],['wc_teak',0.65],['wc_maple',0.7],['wc_mahogany',0.8],['wc_yew',0.9],['wc_magic',1.1],
+   ['fs_shrimp',0.4],['fs_sardine',0.45],['fs_trout',0.5],['fs_salmon',0.6],['fs_tuna',0.65],['fs_lobster',0.7],['fs_sword',0.8],['fs_shark',1.0]]
     .forEach(([id, mult]) => { if (ACTION[id]) ACTION[id].rare = gemTable(mult); });
 
-  /* ── Monsters (combat). reqCb gates by combat level. ──────────── */
+  /* ── Monsters (combat). reqCb gates by combat level. 6 zones. ─── */
   const MONSTERS = [
-    { id:'chicken', name:'Chicken',      icon:'🐔', zone:'Greenfields', reqCb:1,  hp:6,   maxHit:1,  acc:2,  def:1,  xp:5,   coins:[1,4],    interval:2.4 },
-    { id:'rat',     name:'Giant Rat',    icon:'🐀', zone:'Greenfields', reqCb:1,  hp:12,  maxHit:2,  acc:4,  def:3,  xp:9,   coins:[2,6],    interval:2.4 },
-    { id:'wolf',    name:'Wolf',         icon:'🐺', zone:'Greenfields', reqCb:5,  hp:30,  maxHit:4,  acc:8,  def:7,  xp:18,  coins:[4,12],   interval:2.6 },
-    { id:'goblin',  name:'Goblin',       icon:'👺', zone:'Stonebreak',  reqCb:12, hp:55,  maxHit:6,  acc:16, def:14, xp:32,  coins:[8,22],   interval:2.6, drops:[{ item:'ore_iron', min:1, max:2, chance:0.10 }] },
-    { id:'bandit',  name:'Bandit',       icon:'🥷', zone:'Stonebreak',  reqCb:20, hp:90,  maxHit:9,  acc:28, def:24, xp:55,  coins:[18,44],  interval:2.6, drops:[{ item:'bar_iron', min:1, max:1, chance:0.06 }, { item:'weapon_iron', min:1, max:1, chance:0.01 }] },
-    { id:'hobgob',  name:'Hobgoblin',    icon:'👹', zone:'Stonebreak',  reqCb:30, hp:140, maxHit:13, acc:42, def:40, xp:90,  coins:[30,70],  interval:2.8, drops:[{ item:'ore_coal', min:1, max:3, chance:0.12 }, { item:'armor_iron', min:1, max:1, chance:0.01 }] },
-    { id:'troll',   name:'Mountain Troll',icon:'🧌',zone:'Frostpeak',   reqCb:42, hp:230, maxHit:19, acc:62, def:58, xp:150, coins:[55,120], interval:3.0, drops:[{ item:'ore_mithril', min:1, max:2, chance:0.08 }, { item:'weapon_steel', min:1, max:1, chance:0.008 }] },
-    { id:'ogre',    name:'Ogre',         icon:'👿', zone:'Frostpeak',   reqCb:55, hp:360, maxHit:26, acc:88, def:80, xp:240, coins:[90,200], interval:3.0, drops:[{ item:'bar_mithril', min:1, max:2, chance:0.06 }, { item:'armor_steel', min:1, max:1, chance:0.008 }] },
-    { id:'demon',   name:'Lesser Demon', icon:'😈', zone:'Emberdeep',   reqCb:70, hp:560, maxHit:36, acc:120,def:112,xp:400, coins:[160,340],interval:3.0, drops:[{ item:'weapon_mithril', min:1, max:1, chance:0.006 }, { item:'gem_dragon', min:1, max:1, chance:0.001 }] },
-    { id:'dragon',  name:'Green Dragon', icon:'🐉', zone:'Emberdeep',   reqCb:85, hp:880, maxHit:50, acc:170,def:160,xp:700, coins:[300,650],interval:3.2, drops:[{ item:'armor_mithril', min:1, max:1, chance:0.006 }, { item:'gem_dragon', min:1, max:1, chance:0.003 }] },
+    // Greenfields
+    { id:'chicken', name:'Chicken',      icon:'🐔', zone:'Greenfields', reqCb:1,  hp:6,    maxHit:1,  acc:2,  def:1,  xp:5,   coins:[1,4],    interval:2.4 },
+    { id:'rat',     name:'Giant Rat',    icon:'🐀', zone:'Greenfields', reqCb:1,  hp:12,   maxHit:2,  acc:4,  def:3,  xp:9,   coins:[2,6],    interval:2.4 },
+    { id:'cow',     name:'Cow',          icon:'🐄', zone:'Greenfields', reqCb:3,  hp:20,   maxHit:3,  acc:6,  def:5,  xp:13,  coins:[3,9],    interval:2.5 },
+    { id:'wolf',    name:'Wolf',         icon:'🐺', zone:'Greenfields', reqCb:6,  hp:34,   maxHit:4,  acc:9,  def:8,  xp:20,  coins:[4,12],   interval:2.6 },
+    // Stonebreak Caves
+    { id:'goblin',  name:'Goblin',       icon:'👺', zone:'Stonebreak',  reqCb:12, hp:55,   maxHit:6,  acc:16, def:14, xp:32,  coins:[8,22],   interval:2.6, drops:[{ item:'ore_iron', min:1, max:2, chance:0.10 }] },
+    { id:'skeleton',name:'Skeleton',     icon:'💀', zone:'Stonebreak',  reqCb:16, hp:72,   maxHit:8,  acc:22, def:19, xp:44,  coins:[12,30],  interval:2.6, drops:[{ item:'ore_coal', min:1, max:2, chance:0.12 }] },
+    { id:'bandit',  name:'Bandit',       icon:'🥷', zone:'Stonebreak',  reqCb:20, hp:90,   maxHit:9,  acc:28, def:24, xp:55,  coins:[18,44],  interval:2.6, drops:[{ item:'bar_iron', min:1, max:1, chance:0.06 }, { item:'weapon_iron', min:1, max:1, chance:0.012 }] },
+    { id:'hobgob',  name:'Hobgoblin',    icon:'👹', zone:'Stonebreak',  reqCb:30, hp:140,  maxHit:13, acc:42, def:40, xp:90,  coins:[30,70],  interval:2.8, drops:[{ item:'ore_coal', min:1, max:3, chance:0.12 }, { item:'armor_iron', min:1, max:1, chance:0.012 }] },
+    // Frostpeak
+    { id:'icewolf', name:'Ice Wolf',     icon:'🐺', zone:'Frostpeak',   reqCb:38, hp:190,  maxHit:16, acc:54, def:50, xp:120, coins:[44,96],  interval:2.8, drops:[{ item:'ore_mithril', min:1, max:1, chance:0.07 }] },
+    { id:'troll',   name:'Mountain Troll',icon:'🧌',zone:'Frostpeak',   reqCb:42, hp:230,  maxHit:19, acc:62, def:58, xp:150, coins:[55,120], interval:3.0, drops:[{ item:'ore_mithril', min:1, max:2, chance:0.08 }, { item:'weapon_steel', min:1, max:1, chance:0.01 }] },
+    { id:'yeti',    name:'Yeti',         icon:'❄️', zone:'Frostpeak',   reqCb:50, hp:300,  maxHit:23, acc:78, def:72, xp:200, coins:[72,160], interval:3.0, drops:[{ item:'bar_mithril', min:1, max:1, chance:0.06 }, { item:'armor_steel', min:1, max:1, chance:0.01 }] },
+    { id:'ogre',    name:'Ogre',         icon:'👿', zone:'Frostpeak',   reqCb:55, hp:360,  maxHit:26, acc:88, def:80, xp:240, coins:[90,200], interval:3.0, drops:[{ item:'ore_adamantite', min:1, max:2, chance:0.06 }, { item:'weapon_mithril', min:1, max:1, chance:0.008 }] },
+    // Emberdeep
+    { id:'imp',     name:'Imp',          icon:'👺', zone:'Emberdeep',   reqCb:60, hp:430,  maxHit:30, acc:102,def:94, xp:300, coins:[120,260],interval:3.0, drops:[{ item:'ore_adamantite', min:1, max:2, chance:0.08 }, { item:'armor_mithril', min:1, max:1, chance:0.008 }] },
+    { id:'demon',   name:'Lesser Demon', icon:'😈', zone:'Emberdeep',   reqCb:70, hp:560,  maxHit:36, acc:120,def:112,xp:400, coins:[160,340],interval:3.0, drops:[{ item:'bar_adamant', min:1, max:1, chance:0.06 }, { item:'weapon_adamant', min:1, max:1, chance:0.006 }, { item:'gem_dragon', min:1, max:1, chance:0.001 }] },
+    { id:'hellhound',name:'Hellhound',   icon:'🐕', zone:'Emberdeep',   reqCb:78, hp:700,  maxHit:43, acc:144,def:136,xp:520, coins:[210,440],interval:3.0, drops:[{ item:'ore_runite', min:1, max:1, chance:0.05 }, { item:'armor_adamant', min:1, max:1, chance:0.006 }] },
+    // Dragon's Lair
+    { id:'green_dragon', name:'Green Dragon', icon:'🐉', zone:"Dragon's Lair", reqCb:85, hp:880,  maxHit:50, acc:170,def:160,xp:700,  coins:[300,650],  interval:3.2, drops:[{ item:'weapon_rune', min:1, max:1, chance:0.006 }, { item:'gem_dragon', min:1, max:1, chance:0.003 }] },
+    { id:'red_dragon',   name:'Red Dragon',   icon:'🐲', zone:"Dragon's Lair", reqCb:95, hp:1150, maxHit:60, acc:210,def:200,xp:900,  coins:[420,880],  interval:3.2, drops:[{ item:'armor_rune', min:1, max:1, chance:0.006 }, { item:'gem_dragon', min:1, max:1, chance:0.005 }] },
+    // The Abyss
+    { id:'wyrm',    name:'Abyssal Wyrm', icon:'🪱', zone:'The Abyss',   reqCb:105,hp:1500, maxHit:72, acc:260,def:250,xp:1200, coins:[600,1200], interval:3.4, drops:[{ item:'bar_rune', min:1, max:2, chance:0.06 }, { item:'gem_dragon', min:1, max:1, chance:0.006 }] },
+    { id:'kraken',  name:'Kraken',       icon:'🦑', zone:'The Abyss',   reqCb:115,hp:2000, maxHit:88, acc:320,def:310,xp:1600, coins:[900,1800], interval:3.4, drops:[{ item:'weapon_rune', min:1, max:1, chance:0.01 }, { item:'armor_rune', min:1, max:1, chance:0.01 }, { item:'gem_dragon', min:1, max:2, chance:0.01 }] },
   ];
   const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m]));
   const ZONES = [...new Set(MONSTERS.map(m => m.zone))];
@@ -218,6 +280,7 @@
   let progress = 0;            // seconds accumulated on the active action (transient)
   let cmb = null;              // transient combat state { id, mhp, php, pAtk, mAtk, flash }
   let renderThrottle = 0;
+  let hiddenAt = 0;            // timestamp the screen was hidden (for away catch-up)
 
   function defaultState() {
     const skillsXp = {};
@@ -569,12 +632,15 @@
   };
   window.IdleRealm_sell = function(id) {
     const it = ITEMS[id]; if (!it || id === 'coins') return;
-    const q = bankCount(id); if (q < 1) return;
+    const have = bankCount(id); if (have < 1) return;
+    const q = sellAmt === 'all' ? have : Math.min(parseInt(sellAmt), have);
+    if (q < 1) return;
     const gold = (it.value || 1) * q;
     bankRemove(id, q); bankAdd('coins', gold);
     Toast.show('🪙', 'Sold ' + q + '× ' + it.name, '+' + Fmt.format(gold) + ' coins');
-    renderBankTab();
+    renderBankTab(); renderTopbar();
   };
+  window.IdleRealm_setSellAmt = function(v) { sellAmt = v; localStorage.setItem('rl_sellAmt', v); renderBankTab(); };
   window.IdleRealm_buyShop = function(id) {
     const def = shopDef(id); if (!def) return;
     const lvl = shopLvl(id);
@@ -629,15 +695,17 @@
     if (bankCount('gem_dragon')) AchievementSystem.unlock('r_rare');
   }
 
-  /* ── Offline progress ────────────────────────────────────────── */
-  function applyOfflineProgress(save) {
-    const d = save.data;
-    if (!d.action) return;
-    const S0 = S; S = d; // run all helpers against the raw save
+  /* ── Offline / away progress ─────────────────────────────────── */
+  // Simulate `rawElapsedSec` of the active action on state `d` (mutates it).
+  // Returns { summary, elapsed } or null if nothing happened. Used both for
+  // load-time offline catch-up and for screen-locked-while-open catch-up.
+  function runCatchUp(d, rawElapsedSec) {
+    if (!d.action) return null;
+    const S0 = S; S = d; // run all helpers against the target state
     let summary = '', elapsed = 0;
     try {
-      elapsed = Math.min((Date.now() - (save.savedAt || Date.now())) / 1000, offlineCap());
-      if (elapsed < 60) return;
+      elapsed = Math.min(rawElapsedSec, offlineCap());
+      if (elapsed < 60) return null;
       const gxp = globalXpMul();
       if (d.action.type === 'skill') {
         const a = ACTION[d.action.id];
@@ -690,13 +758,20 @@
         }
       }
     } finally { S = S0; }
-    if (!summary) return;
-    if (!Settings.get('offlineModal')) { Toast.show('🌙', 'Welcome back', summary); return; }
+    return summary ? { summary, elapsed } : null;
+  }
+  // Welcome-back popup/toast for a catch-up result.
+  function announceCatchUp(res) {
+    if (!res) return;
+    if (!Settings.get('offlineModal')) { Toast.show('🌙', 'Welcome back', res.summary); return; }
     Modal.show({
       title: '🌙 Welcome back',
-      body: `You were away <strong>${Fmt.time(elapsed)}</strong> and kept working:<br><br>${summary}`,
+      body: `You were away <strong>${Fmt.time(res.elapsed)}</strong> and kept working:<br><br>${res.summary}`,
       actions: [{ label: '⚔️ Continue', cls: 'btn-primary' }]
     });
+  }
+  function applyOfflineProgress(save) {
+    announceCatchUp(runCatchUp(save.data, (Date.now() - (save.savedAt || Date.now())) / 1000));
   }
 
   /* ── Load / save ─────────────────────────────────────────────── */
@@ -725,6 +800,7 @@
 
   /* ── Rendering ───────────────────────────────────────────────── */
   let activeTab = localStorage.getItem('rl_tab') || 'skills';
+  let sellAmt = localStorage.getItem('rl_sellAmt') || '1';
 
   window.IdleRealm_tab = function(tab, btn) {
     activeTab = tab; localStorage.setItem('rl_tab', tab);
@@ -742,11 +818,11 @@
     const pct = lvl >= MAX_LEVEL ? 100 : Math.max(0, (xp - cur) / (next - cur) * 100);
     return { lvl, pct, xp, next };
   }
-  // Expected XP/sec a skill action yields (accounts for cooking burn)
+  // Expected XP/sec a skill action yields (accounts for cooking burn + global XP mult)
   function actionXpRate(a) {
     let perCycle = a.xp;
     if (a.output && a.burn) { const bc = cookBurnChance(a); perCycle = a.xp * (1 - bc) + Math.floor(a.xp * 0.3) * bc; }
-    return perCycle / actionEffTime(a);
+    return perCycle * globalXpMul() / actionEffTime(a);
   }
   // Seconds until the next level in `skillId` at the given xp/sec (null if maxed/idle)
   function etaToLevel(skillId, xpPerSec) {
@@ -759,14 +835,21 @@
     const lvl = skillLevel(skillId);
     return ACTIONS.filter(a => a.skill === skillId && a.lvl > lvl).sort((a, b) => a.lvl - b.lvl)[0] || null;
   }
-  // Compact ETA line for the active skill action
+  // Compact ETA line for the active skill action: next level, next unlock, and 99
   function skillEtaLine(a) {
-    const rate = actionXpRate(a);
+    const rate = actionXpRate(a);            // xp/sec
+    const lvl = skillLevel(a.skill);
+    const parts = [];
     const tl = etaToLevel(a.skill, rate);
-    let parts = [];
-    parts.push(tl != null ? `⏳ Lv.${skillLevel(a.skill) + 1} in <b>${Fmt.time(tl)}</b>` : '⏳ <b class="text-gold">maxed</b>');
+    parts.push(tl != null ? `⏳ Lv.${lvl + 1} in <b>${Fmt.time(tl)}</b>` : '⏳ <b class="text-gold">maxed</b>');
     const nu = nextUnlock(a.skill);
     if (nu && rate > 0) parts.push(`🔓 ${nu.name} in <b>${Fmt.time((xpForLevel(nu.lvl) - skillXp(a.skill)) / rate)}</b>`);
+    if (lvl < MAX_LEVEL && rate > 0) {
+      const rem = xpForLevel(MAX_LEVEL) - skillXp(a.skill);
+      const perCycleXp = rate * actionEffTime(a);         // xp per completed action
+      const acts = Math.ceil(rem / perCycleXp);
+      parts.push(`🏁 99 in <b>${Fmt.time(rem / rate)}</b>${(a.item || a.output) ? ` · ~${Fmt.format(acts)} more` : ''}`);
+    }
     return parts.join(' · ');
   }
   function foodCount() { return Object.keys(S.bank).reduce((n, id) => n + ((ITEMS[id] && ITEMS[id].type === 'food') ? bankCount(id) : 0), 0); }
@@ -786,13 +869,15 @@
     const empty = (minCycles === Infinity || minCycles <= 0) ? '<span style="color:var(--red)">empty!</span>' : `runs out in <b>${Fmt.time(minCycles * eff)}</b>`;
     return `📦 ${parts.join(' · ')} · ${empty}`;
   }
-  // ETA line for combat: time to next level of the trained style skill
+  // ETA line for combat: time to next level (and to 99) of the trained style skill
   function combatEtaLine(m) {
     const kps = playerDps(m) / m.hp;                 // kills per second
-    const tl = etaToLevel(styleSkill(), kps * m.xp);
-    const sk = SKILL[styleSkill()];
-    if (tl == null) return `⏳ ${sk.name} <b class="text-gold">maxed</b> · ~${Fmt.time(1 / kps)}/kill`;
-    return `⏳ ${sk.name} Lv.${skillLevel(styleSkill()) + 1} in <b>${Fmt.time(tl)}</b> · ~${Fmt.time(1 / kps)}/kill`;
+    const xpPerSec = kps * m.xp * globalXpMul();
+    const sk = SKILL[styleSkill()], lvl = skillLevel(styleSkill());
+    if (lvl >= MAX_LEVEL || xpPerSec <= 0) return `⏳ ${sk.name} <b class="text-gold">maxed</b> · ~${Fmt.time(1 / kps)}/kill`;
+    const tl = (xpForLevel(lvl + 1) - skillXp(styleSkill())) / xpPerSec;
+    const t99 = (xpForLevel(MAX_LEVEL) - skillXp(styleSkill())) / xpPerSec;
+    return `⏳ ${sk.name} Lv.${lvl + 1} in <b>${Fmt.time(tl)}</b> · 🏁 99 in <b>${Fmt.time(t99)}</b> · ~${Fmt.time(1 / kps)}/kill`;
   }
 
   function renderActiveHeader() {
@@ -866,7 +951,9 @@
       const locked = skillLevel(s.id) < a.lvl;
       const active = S.action && S.action.type === 'skill' && S.action.id === a.id;
       const inputTxt = a.inputs ? Object.keys(a.inputs).map(k => `${a.inputs[k]}× ${itemIcon(k)}(${Fmt.format(bankCount(k))})`).join(' ') + ' → ' : '';
+      const outId = a.item || a.output;
       const outTxt = a.item ? itemIcon(a.item) + ' ' + itemName(a.item) : a.output ? itemIcon(a.output) + ' ' + itemName(a.output) : 'XP only';
+      const ownTxt = outId ? `<div style="color:var(--gold)">🎒 ${Fmt.format(bankCount(outId))}</div>` : '';
       html += `<button class="upgrade-item ${active ? '' : (locked ? 'locked' : 'can-buy')}" onclick="IdleRealm_selectAction('${a.id}')" style="${active ? 'border-color:var(--accent)' : ''}">
           <div class="upg-icon">${a.icon}</div>
           <div class="upg-info">
@@ -874,7 +961,7 @@
             <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Lv.${a.lvl}` : `${inputTxt}${outTxt}`}</div>
             ${!locked && masteryLevel(a.id) > 0 ? `<div style="font-size:11px;color:var(--accent)">🎯 Mastery ${masteryLevel(a.id)}</div>` : ''}
           </div>
-          <div style="text-align:right;flex-shrink:0;font-size:12px"><div class="text-green">+${a.xp} xp</div><div style="color:var(--text2)">${a.time.toFixed(1)}s</div></div>
+          <div style="text-align:right;flex-shrink:0;font-size:12px"><div class="text-green">+${a.xp} xp</div><div style="color:var(--text2)">${a.time.toFixed(1)}s</div>${ownTxt}</div>
         </button>`;
     });
     html += '</div>';
@@ -961,10 +1048,15 @@
     ids.sort((a, b) => (order[(ITEMS[a] || {}).type] ?? 9) - (order[(ITEMS[b] || {}).type] ?? 9));
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
     html += `<div style="font-size:12px;color:var(--text2)">Bank — tap gear to equip, or sell items for coins.</div>`;
+    // Sell-amount selector — choose how many to sell per tap
+    const amts = [['1', '×1'], ['10', '×10'], ['100', '×100'], ['all', 'All']];
+    html += `<div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--text2)">Sell</span>${amts.map(([v, l]) => `<button class="buy-amt-btn ${sellAmt === v ? 'active' : ''}" onclick="IdleRealm_setSellAmt('${v}')">${l}</button>`).join('')}</div>`;
     ids.forEach(id => {
       const it = ITEMS[id] || { name: id, icon: '❔' };
       const isGear = it.type === 'gear';
       const equipped = isGear && S.equip[it.slot] === id;
+      const have = bankCount(id);
+      const nSell = sellAmt === 'all' ? have : Math.min(parseInt(sellAmt), have);
       let sub = '';
       if (isGear) {
         if (it.slot === 'weapon') sub = `+${it.acc} acc / +${it.str} str`;
@@ -981,7 +1073,7 @@
             <div style="font-size:12px;color:var(--text2)">${sub}</div></div>
           <div style="display:flex;gap:4px;flex-shrink:0">
             ${isGear && !equipped ? `<button class="bld-level can-buy" onclick="IdleRealm_equip('${id}')">Equip</button>` : ''}
-            ${id !== 'coins' ? `<button class="bld-level" onclick="IdleRealm_sell('${id}')" style="color:var(--gold)">🪙${Fmt.format((it.value || 1) * bankCount(id))}</button>` : ''}
+            ${id !== 'coins' ? `<button class="bld-level" onclick="IdleRealm_sell('${id}')" style="color:var(--gold)">🪙${Fmt.format((it.value || 1) * nSell)}${sellAmt !== 'all' && have > nSell ? ` ×${nSell}` : ''}</button>` : ''}
           </div>
         </div>`;
     });
@@ -1119,7 +1211,23 @@
     }
   });
 
+  // While the screen is open the rAF ticker pauses when the tab is hidden /
+  // phone is locked — so time would be lost. Stamp the moment we hide, and on
+  // return run the same catch-up we use for offline, so locked time counts.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && document.getElementById('screen-dungeon')?.classList.contains('active')) saveGame();
+    const active = document.getElementById('screen-dungeon')?.classList.contains('active');
+    if (!active || !S) return;
+    if (document.hidden) {
+      hiddenAt = Date.now();
+      saveGame();
+    } else if (hiddenAt) {
+      const res = runCatchUp(S, (Date.now() - hiddenAt) / 1000);
+      hiddenAt = 0;
+      progress = 0;                       // avoid double-counting the in-flight cycle
+      if (S.action && S.action.type === 'combat' && cmb) cmb.php = maxHp(); // fresh after a long away gap
+      S.savedAt = Date.now();
+      announceCatchUp(res);
+      renderAll();
+    }
   });
 })(); // end IdleRealm
