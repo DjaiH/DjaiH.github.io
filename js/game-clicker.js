@@ -109,6 +109,7 @@
   let S = null; // loaded state
   let tickFn = null;
   let autosaveTimer = null;
+  let ckHiddenAt = 0; // timestamp the screen was hidden (for away catch-up)
   let goldenCookieTimer = null;
   let goldenDespawnTimer = null;
   let goldenActive = false;
@@ -962,9 +963,20 @@
     }
   });
 
+  // The rAF ticker pauses while the tab is hidden / phone is locked, so time
+  // would be lost even with the game open. Stamp the hide moment and, on
+  // return, run the same offline catch-up so cookies bake while away.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && document.getElementById('screen-clicker')?.classList.contains('active')) {
+    const active = document.getElementById('screen-clicker')?.classList.contains('active');
+    if (!active || !S) return;
+    if (document.hidden) {
+      ckHiddenAt = Date.now();
       saveGame();
+    } else if (ckHiddenAt) {
+      applyOfflineProgress({ data: S, savedAt: ckHiddenAt });
+      ckHiddenAt = 0;
+      S.savedAt = Date.now();
+      renderAll();
     }
   });
 })(); // end ClickerGame

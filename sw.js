@@ -1,6 +1,6 @@
 /* Service worker — caches the app shell so it runs fully offline after the first visit.
    Bump CACHE when you change index.html so clients pick up the new version. */
-const CACHE = 'mini-game-hub-v11';
+const CACHE = 'mini-game-hub-v12';
 const ASSETS = [
   './', './index.html', './manifest.json', './icon.svg',
   './css/styles.css',
