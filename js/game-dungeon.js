@@ -840,8 +840,7 @@
 
   window.IdleRealm_tab = function(tab, btn) {
     activeTab = tab; localStorage.setItem('rl_tab', tab);
-    document.querySelectorAll('#screen-dungeon .tab-btn').forEach(b => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
+    syncTabButtons();
     renderAll();
   };
   function syncTabButtons() {
@@ -887,6 +886,15 @@
       parts.push(`🏁 99 in <b>${Fmt.time(rem / rate)}</b>${(a.item || a.output) ? ` · ~${Fmt.format(acts)} more` : ''}`);
     }
     return parts.join(' · ');
+  }
+  // ETA to the next mastery level for the active action (mastery xp = a.xp/cycle)
+  function masteryEtaLine(a) {
+    const lvl = masteryLevel(a.id);
+    if (lvl >= MASTERY_CAP) return 'MAX';
+    const rate = a.xp / actionEffTime(a);   // mastery xp per second
+    if (rate <= 0) return '';
+    const need = masteryXpForLevel(lvl + 1) - masteryXp(a.id);
+    return `⏳ next ${Fmt.time(need / rate)}`;
   }
   function foodCount() { return Object.keys(S.bank).reduce((n, id) => n + ((ITEMS[id] && ITEMS[id].type === 'food') ? bankCount(id) : 0), 0); }
   // For input-consuming actions: how many of each material are left and how
@@ -949,7 +957,7 @@
         <div class="progress-bar" style="height:5px;margin-top:4px"><div class="progress-fill green" style="width:${Math.min(100, progress / eff * 100)}%"></div></div>
         <div style="font-size:12px;color:var(--text2);margin-top:6px">${skillEtaLine(a)}</div>
         ${a.inputs ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${inputsLine(a)}</div>` : ''}
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">🎯 Mastery Lv.${masteryLevel(a.id)}/${MASTERY_CAP} · ${Math.round(masterySpeed(a.id) * 100)}% faster · ${Math.round(masteryDouble(a.id) * 100)}% double</div>`;
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">🎯 Mastery Lv.${masteryLevel(a.id)}/${MASTERY_CAP} · ${Math.round(masterySpeed(a.id) * 100)}% faster · ${Math.round(masteryDouble(a.id) * 100)}% double · ${masteryEtaLine(a)}</div>`;
     }
   }
 
@@ -1100,7 +1108,7 @@
         <span style="${slotsFull ? 'color:var(--red)' : ''}">🎒 ${bankSlotsUsed()}/${bankSlotsMax()} slots</span>
       </div>`;
     // Sell-amount selector — choose how many to sell per tap
-    const amts = [['1', '×1'], ['10', '×10'], ['100', '×100'], ['all', 'All']];
+    const amts = [['1', '×1'], ['10', '×10'], ['100', '×100'], ['1000', '×1000'], ['all', 'All']];
     html += `<div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--text2)">Sell</span>${amts.map(([v, l]) => `<button class="buy-amt-btn ${sellAmt === v ? 'active' : ''}" onclick="IdleRealm_setSellAmt('${v}')">${l}</button>`).join('')}</div>`;
     ids.forEach(id => {
       const it = ITEMS[id] || { name: id, icon: '❔' };
@@ -1168,7 +1176,11 @@
     ];
     const ids = Object.keys(ITEMS);
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
-    html += `<div style="font-size:12px;color:var(--text2)">Every item in the game, its effect, sell value, and how many you own (✓ = owned).</div>`;
+    html += `<div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="menu-section-title" style="padding:0">📖 Item Codex</span>
+        <button class="buy-amt-btn" onclick="IdleRealm_tab('skills')">← Back</button>
+      </div>
+      <div style="font-size:12px;color:var(--text2)">Every item in the game, its effect, sell value, and how many you own (✓ = owned).</div>`;
     groups.forEach(([label, test]) => {
       const members = ids.filter(id => { try { return test(id); } catch { return false; } });
       if (!members.length) return;
@@ -1192,20 +1204,56 @@
   function renderStatsTab() {
     const list = document.getElementById('rl-content');
     if (!list || activeTab !== 'stats') return;
-    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:8px">';
-    const eq = ['weapon', 'armor', 'tool', 'amulet', 'cape'].map(sl => { const it = equippedItem(sl); return `${sl}: ${it ? it.icon + ' ' + it.name : '—'}`; }).join(' · ');
-    html += `<div style="font-size:12px;color:var(--text2)">Equipped — ${eq}</div>`;
-    html += `<div class="stat-row"><span class="text-muted">Combat level</span><span class="text-accent">${combatLevel()}</span></div>`;
-    html += `<div class="stat-row"><span class="text-muted">Slayer points · tasks</span><span>💀 ${Fmt.format((S.slayer&&S.slayer.points)||0)} · ${(S.slayer&&S.slayer.done)||0}</span></div>`;
-    html += `<div class="stat-row"><span class="text-muted">Total level</span><span>${totalLevel()} / ${SKILLS.length * 99}</span></div>`;
-    html += `<div class="stat-row"><span class="text-muted">Max hit / Max HP</span><span>${playerMaxHit()} / ${maxHp()}</span></div>`;
-    html += `<div class="stat-row"><span class="text-muted">Monsters slain</span><span>${Fmt.format(S.kills || 0)}</span></div>`;
+    const card = (title, inner) => `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px">
+        <div class="menu-section-title" style="padding:0 0 6px">${title}</div>${inner}</div>`;
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:10px">';
+
+    // ── Overview ──
+    html += card('🦸 Overview', `
+      <div class="stat-row"><span class="text-muted">Combat level</span><span class="text-accent" style="font-weight:700">${combatLevel()}</span></div>
+      <div class="stat-row"><span class="text-muted">Total level</span><span>${Fmt.format(totalLevel())} / ${SKILLS.length * 99}</span></div>
+      <div class="stat-row"><span class="text-muted">Monsters slain</span><span>${Fmt.format(S.kills || 0)}</span></div>
+      <div class="stat-row"><span class="text-muted">Slayer · points / tasks</span><span>💀 ${Fmt.format((S.slayer && S.slayer.points) || 0)} / ${(S.slayer && S.slayer.done) || 0}</span></div>
+      <div class="stat-row"><span class="text-muted">Coins</span><span class="text-gold">🪙 ${Fmt.format(bankCount('coins'))}</span></div>`);
+
+    // ── Combat stats ──
+    const critNote = '';
+    html += card('⚔️ Combat', `
+      <div class="stat-row"><span class="text-muted">Max hit</span><span>${playerMaxHit()}</span></div>
+      <div class="stat-row"><span class="text-muted">Max HP</span><span>❤️ ${maxHp()}</span></div>
+      <div class="stat-row"><span class="text-muted">Accuracy rating</span><span>${Fmt.format(Math.round(playerAtkRoll()))}</span></div>
+      <div class="stat-row"><span class="text-muted">Defence rating</span><span>${Fmt.format(Math.round(playerDefRoll()))}</span></div>
+      <div class="stat-row"><span class="text-muted">Food in bank</span><span>🍖 ${foodCount()}</span></div>
+      <div style="display:flex;gap:10px;margin-top:6px">${['attack', 'strength', 'defence', 'hitpoints'].map(id => {
+        const b = xpBar(id);
+        return `<div style="flex:1;text-align:center"><div style="font-size:16px">${SKILL[id].icon}</div><div style="font-size:12px;font-weight:600">${b.lvl}</div><div style="font-size:10px;color:var(--text2)">${SKILL[id].name}</div></div>`;
+      }).join('')}</div>`);
+
+    // ── Equipment ──
+    const slotRow = (sl, label) => {
+      const it = equippedItem(sl);
+      let eff = '<span class="text-muted">— empty —</span>';
+      if (it) {
+        if (sl === 'weapon') eff = `+${it.acc} acc · +${it.str} str`;
+        else if (sl === 'armor') eff = `+${it.def} def`;
+        else if (sl === 'tool') eff = `+${Math.round(it.speed * 100)}% gather`;
+        else if (sl === 'amulet') eff = [it.acc ? `+${it.acc} acc` : '', it.str ? `+${it.str} str` : '', it.gspeed ? `+${Math.round(it.gspeed * 100)}% gather` : '', it.rare ? `+${Math.round(it.rare * 100)}% rare` : ''].filter(Boolean).join(' · ');
+        else if (sl === 'cape') eff = `+${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' · all perks' : ` · ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
+      }
+      return `<div class="stat-row"><span>${it ? it.icon : '▫️'} <span class="text-muted">${label}</span> ${it ? it.name : ''}</span><span style="font-size:12px;color:var(--text2);text-align:right">${eff}</span></div>`;
+    };
+    html += card('🛡️ Equipment', ['weapon', 'armor', 'tool', 'amulet', 'cape'].map(sl => slotRow(sl, sl[0].toUpperCase() + sl.slice(1))).join(''));
+
+    // ── All skills ──
+    let skillsHtml = '';
     SKILLS.forEach(s => {
       const b = xpBar(s.id);
-      html += `<div style="margin-top:2px">
+      skillsHtml += `<div style="margin-top:2px">
         <div style="display:flex;justify-content:space-between;font-size:13px"><span>${s.icon} ${s.name}</span><span>Lv.${b.lvl} <span style="color:var(--text2);font-size:11px">${Fmt.format(b.xp)} xp</span></span></div>
         <div class="progress-bar" style="height:5px;margin-top:2px"><div class="progress-fill" style="width:${b.pct}%;background:${s.kind === 'combat' ? 'var(--red)' : 'var(--accent)'}"></div></div></div>`;
     });
+    html += card('📊 Skills', skillsHtml);
+
     html += '</div>';
     list.innerHTML = html;
   }
@@ -1261,8 +1309,20 @@
         <p class="mt-8"><b>💀 Slayer:</b> take a <b>task</b> (kill N of a monster) for Slayer XP, bonus coins and Slayer points — spend points on permanent perks. <b>🎽 Skill capes</b> drop when you hit <b>99</b> in a skill: a cape slot giving +5% XP plus a perk for its skill (Max Cape for all-99).</p>
         <p class="mt-8"><b>Mastery</b> rises per action (faster + double yields), and the <b>🛒 Store</b> spends coins on permanent boosts. Every skill grinds to <b>99</b> and loot is <b>rare</b> on purpose — a long game. Have fun.</p>
       `,
-      actions: [{ label: 'Got it', cls: 'btn-primary' }]
+      actions: [
+        { label: '📖 Item Codex', fn: () => IdleRealm_openItems() },
+        { label: 'Got it', cls: 'btn-primary' }
+      ]
     });
+  };
+  // The full item list, opened from the ℹ️ info button (no longer a tab).
+  window.IdleRealm_openItems = function() {
+    activeTab = 'items';
+    localStorage.setItem('rl_tab', 'items');
+    document.querySelectorAll('#screen-dungeon .tab-btn').forEach(b => b.classList.remove('active'));
+    renderAll();
+    const area = document.getElementById('rl-content');
+    if (area) area.scrollTop = 0;
   };
 
   /* ── Build UI ────────────────────────────────────────────────── */
@@ -1295,8 +1355,7 @@
             <button class="tab-btn" data-tab="slayer" style="min-width:72px" onclick="IdleRealm_tab('slayer',this)">💀 Slayer</button>
             <button class="tab-btn" data-tab="bank"   style="min-width:64px" onclick="IdleRealm_tab('bank',this)">🎒 Bank</button>
             <button class="tab-btn" data-tab="store"  style="min-width:64px" onclick="IdleRealm_tab('store',this)">🛒 Store</button>
-            <button class="tab-btn" data-tab="items"  style="min-width:64px" onclick="IdleRealm_tab('items',this)">📖 Items</button>
-            <button class="tab-btn" data-tab="stats"  style="min-width:64px" onclick="IdleRealm_tab('stats',this)">📊 Stats</button>
+            <button class="tab-btn" data-tab="stats"  style="min-width:74px" onclick="IdleRealm_tab('stats',this)">🦸 Hero</button>
           </div>
           <div id="rl-content"></div>
         </div>
