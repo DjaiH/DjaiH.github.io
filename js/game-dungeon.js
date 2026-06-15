@@ -789,12 +789,21 @@
             const coins = Math.round((m.coins[0] + m.coins[1]) / 2 * kills * coinMul());
             bankAdd('coins', coins);
             (m.drops || []).forEach(dr => { const got = Math.floor(kills * dr.chance + Math.random()); if (got > 0) bankAdd(dr.item, got * (((dr.min + dr.max) >> 1) || 1)); });
+            // Slayer task progress (was previously skipped offline)
+            let slayerNote = '';
+            if (d.slayer && d.slayer.task === m.id && d.slayer.left > 0) {
+              const taskKills = Math.min(kills, d.slayer.left);
+              d.skillsXp.slayer = (d.skillsXp.slayer || 0) + Math.round(mx * 0.8 * taskKills * gxp);
+              d.slayer.left -= taskKills;
+              slayerNote = ` · 💀 ${Fmt.format(taskKills)} task kills`;
+              if (d.slayer.left <= 0) { completeSlayerTask(m); slayerNote = ' · 💀 task complete'; }
+            }
             // consume the food that was used (cheapest first)
             let need = Math.max(0, dmgPerSec * Math.min(elapsed, kills * ttk) - maxHp());
             const foods = Object.keys(d.bank).filter(id => ITEMS[id] && ITEMS[id].type === 'food').sort((a, b) => ITEMS[a].heal - ITEMS[b].heal);
             for (const fid of foods) { while (need > 0 && bankCount(fid) > 0) { bankRemove(fid, 1); need -= foodHeal(fid); } }
             d.kills = (d.kills || 0) + kills;
-            summary = `Combat: ${Fmt.format(kills)} kills · +${Fmt.format(sx)} ${styleName()} XP · +${Fmt.format(coins)} 🪙`;
+            summary = `Combat: ${Fmt.format(kills)} kills · +${Fmt.format(sx)} ${styleName()} XP · +${Fmt.format(coins)} 🪙${slayerNote}`;
           }
         }
       }
