@@ -627,12 +627,19 @@
     if (S.slayer.done >= 50) AchievementSystem.unlock('r_slayer50');
     Toast.show('💀', 'Task complete!', `+${pts} Slayer points · +${Fmt.format(bonus)} 🪙`, true);
     Haptics.vibrate([60, 40, 90]);
-    if (slayerLvlOf('sl_auto')) assignSlayerTask(); else { S.slayer.task = null; S.slayer.left = 0; }
+    // Slayer Contract: re-assign a task for the SAME monster you're slaying, so
+    // your active fight and task stay in sync (no surprise switch / mismatch).
+    if (slayerLvlOf('sl_auto')) assignSlayerTask(m.id); else { S.slayer.task = null; S.slayer.left = 0; }
   }
-  function assignSlayerTask() {
+  // preferId: assign a task for this monster if it's eligible (used by the
+  // auto-contract to keep you on your current grind); otherwise pick randomly.
+  function assignSlayerTask(preferId) {
     const cb = combatLevel();
     const pool = MONSTERS.filter(m => m.reqCb <= cb);
-    const m = pool[Math.floor(Math.random() * pool.length)];
+    if (!pool.length) return;
+    const m = (preferId && MONSTER[preferId] && MONSTER[preferId].reqCb <= cb)
+      ? MONSTER[preferId]
+      : pool[Math.floor(Math.random() * pool.length)];
     const total = 15 + Math.floor(cb / 2) + Math.floor(Math.random() * 11);
     S.slayer.task = m.id; S.slayer.left = total; S.slayer.total = total;
     Toast.show('💀', 'New Slayer task', `Defeat ${total}× ${m.name}`);
