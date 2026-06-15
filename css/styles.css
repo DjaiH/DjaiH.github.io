@@ -150,9 +150,10 @@ scrollbar-color: var(--border) transparent;
 .menu-btn-row {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .menu-btn {
-  flex: 1;
+  flex: 1 1 70px;
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: var(--radius);

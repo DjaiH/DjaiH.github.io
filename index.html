@@ -25,7 +25,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>Mini Game Hub</title>
-<!-- v16: Idle Realm — max hit scales smoothly with Strength + shown in combat -->
+<!-- v17: hard-refresh button on the main menu -->
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -78,7 +78,11 @@
       <button class="menu-btn" onclick="Router.go('settings')">
         <span class="btn-icon">⚙️</span>Settings
       </button>
+      <button class="menu-btn" onclick="menuHardRefresh()">
+        <span class="btn-icon">🔄</span>Hard Refresh
+      </button>
     </div>
+    <p class="center text-muted" style="font-size:11px;margin-top:8px">Hard Refresh fetches the latest version — your saved progress is kept.</p>
   </div>
 
   <!-- SAVE / SETTINGS SCREEN -->
