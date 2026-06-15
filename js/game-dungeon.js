@@ -627,25 +627,34 @@
     if (S.slayer.done >= 50) AchievementSystem.unlock('r_slayer50');
     Toast.show('💀', 'Task complete!', `+${pts} Slayer points · +${Fmt.format(bonus)} 🪙`, true);
     Haptics.vibrate([60, 40, 90]);
-    // Slayer Contract: re-assign a task for the SAME monster you're slaying, so
-    // your active fight and task stay in sync (no surprise switch / mismatch).
-    if (slayerLvlOf('sl_auto')) assignSlayerTask(m.id); else { S.slayer.task = null; S.slayer.left = 0; }
+    if (slayerLvlOf('sl_auto')) {
+      assignSlayerTask();              // Slayer Contract: roll a new random task…
+      // …and follow it — switch your active fight to the new task monster.
+      if (S.action && S.action.type === 'combat' && S.slayer.task) {
+        const nm = MONSTER[S.slayer.task];
+        const php = cmb ? cmb.php : maxHp();
+        S.action = { type: 'combat', id: S.slayer.task };
+        cmb = { id: nm.id, mhp: nm.hp, php: Math.min(php, maxHp()), pAtk: PATK_INT, mAtk: nm.interval, flash: 0 };
+      }
+    } else { S.slayer.task = null; S.slayer.left = 0; }
   }
-  // preferId: assign a task for this monster if it's eligible (used by the
-  // auto-contract to keep you on your current grind); otherwise pick randomly.
-  function assignSlayerTask(preferId) {
+  function assignSlayerTask() {
     const cb = combatLevel();
     const pool = MONSTERS.filter(m => m.reqCb <= cb);
     if (!pool.length) return;
-    const m = (preferId && MONSTER[preferId] && MONSTER[preferId].reqCb <= cb)
-      ? MONSTER[preferId]
-      : pool[Math.floor(Math.random() * pool.length)];
+    const m = pool[Math.floor(Math.random() * pool.length)];
     const total = 15 + Math.floor(cb / 2) + Math.floor(Math.random() * 11);
     S.slayer.task = m.id; S.slayer.left = total; S.slayer.total = total;
     Toast.show('💀', 'New Slayer task', `Defeat ${total}× ${m.name}`);
   }
   window.IdleRealm_newTask = function() {
     if (S.slayer.task && S.slayer.left > 0) { Toast.show('💀', 'Finish your task first', `${S.slayer.left}× ${MONSTER[S.slayer.task].name} left`); return; }
+    assignSlayerTask();
+    renderSlayerTab(); renderActiveHeader();
+  };
+  // Abandon the current task and roll a new one (prevents being stuck on a task
+  // you can't clear — e.g. an auto-assigned monster that's too tough).
+  window.IdleRealm_rerollTask = function() {
     assignSlayerTask();
     renderSlayerTab(); renderActiveHeader();
   };
@@ -1052,7 +1061,10 @@
           <div style="font-size:14px;font-weight:600">${m.icon} Slay ${m.name}</div>
           <div style="font-size:12px;color:var(--text2);margin:2px 0 6px"><b>${sl.left}</b> of ${sl.total} remaining</div>
           <div class="progress-bar" style="height:6px"><div class="progress-fill" style="width:${pct}%;background:var(--red)"></div></div>
-          <button class="btn btn-primary mt-8" onclick="IdleRealm_fight('${sl.task}')">${fighting ? '⚔️ Fighting…' : '⚔️ Fight this task'}</button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-primary" style="flex:1" onclick="IdleRealm_fight('${sl.task}')">${fighting ? '⚔️ Fighting…' : '⚔️ Fight this task'}</button>
+            <button class="buy-amt-btn" onclick="IdleRealm_rerollTask()" title="Abandon this task for a new one">🔁 Reroll</button>
+          </div>
         </div>`;
     } else {
       html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
