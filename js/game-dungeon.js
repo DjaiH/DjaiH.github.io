@@ -433,7 +433,9 @@
   function offlineCap()   { return OFFLINE_CAP + shopLvl('charm') * 7200; }
 
   /* ── Combat math ─────────────────────────────────────────────── */
-  function playerMaxHit() { return Math.floor((2 + (skillLevel('strength') + bonus('weapon', 'str') + bonus('amulet', 'str')) * 0.22) * combatDmgMul()); }
+  // Max hit grows smoothly with Strength (kept as a float so every level moves
+  // it visibly; the damage roll and display use it directly).
+  function playerMaxHit() { return (1 + (skillLevel('strength') + bonus('weapon', 'str') + bonus('amulet', 'str')) * 0.3) * combatDmgMul(); }
   function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + (bonus('weapon', 'acc') + bonus('amulet', 'acc')) / 48) * combatAccMul(); }
   function playerDefRoll() { return (skillLevel('defence') + bonus('armor', 'def') + 8); }
   function hitChance(atkRoll, defRoll) { return atkRoll / (atkRoll + defRoll); }
@@ -940,7 +942,7 @@
         <div id="rl-enemy-area" style="text-align:center;font-size:46px;line-height:1;${cmb && cmb.flash > 0 ? 'filter:brightness(1.7)' : ''}">${m.icon}</div>
         <div style="font-size:12px;color:var(--text2);text-align:center;margin:4px 0 2px">${m.name} · ${cmb ? Fmt.format(Math.max(0, Math.ceil(cmb.mhp))) : m.hp} / ${m.hp} HP</div>
         <div class="progress-bar"><div class="progress-fill" style="width:${mp}%;background:var(--red)"></div></div>
-        <div style="font-size:12px;color:var(--text2);margin:8px 0 2px">❤️ You · ${cmb ? Fmt.format(Math.max(0, Math.ceil(cmb.php))) : maxHp()} / ${maxHp()} HP · 🍖 ${foodCount()} food</div>
+        <div style="font-size:12px;color:var(--text2);margin:8px 0 2px">❤️ You · ${cmb ? Fmt.format(Math.max(0, Math.ceil(cmb.php))) : maxHp()} / ${maxHp()} HP · 🍖 ${foodCount()} food · 💥 max hit ${playerMaxHit().toFixed(1)}</div>
         <div class="progress-bar" style="height:8px"><div class="progress-fill green" style="width:${pp}%"></div></div>
         <div style="font-size:12px;color:var(--text2);margin-top:6px">${combatEtaLine(m)}</div>`;
     } else {
@@ -1075,7 +1077,7 @@
             <div class="upg-icon">${m.icon}</div>
             <div class="upg-info">
               <div class="upg-name">${m.name} ${active ? '<span class="text-accent" style="font-size:11px">● fighting</span>' : ''}</div>
-              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Combat Lv.${m.reqCb}` : `${Fmt.format(m.hp)} HP · max hit ${m.maxHit} · +${m.xp} xp · 🪙${m.coins[0]}-${m.coins[1]}`}</div>
+              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Combat Lv.${m.reqCb}` : `${Fmt.format(m.hp)} HP · enemy hits ≤${m.maxHit} · +${m.xp} xp · 🪙${m.coins[0]}-${m.coins[1]}`}</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;align-items:flex-end">
               <button class="bld-level ${locked ? 'locked' : 'can-buy'}" onclick="IdleRealm_fight('${m.id}')">${active ? '⚔️ ●' : 'Fight'}</button>
@@ -1219,7 +1221,7 @@
     // ── Combat stats ──
     const critNote = '';
     html += card('⚔️ Combat', `
-      <div class="stat-row"><span class="text-muted">Max hit</span><span>${playerMaxHit()}</span></div>
+      <div class="stat-row"><span class="text-muted">Max hit</span><span>${playerMaxHit().toFixed(1)}</span></div>
       <div class="stat-row"><span class="text-muted">Max HP</span><span>❤️ ${maxHp()}</span></div>
       <div class="stat-row"><span class="text-muted">Accuracy rating</span><span>${Fmt.format(Math.round(playerAtkRoll()))}</span></div>
       <div class="stat-row"><span class="text-muted">Defence rating</span><span>${Fmt.format(Math.round(playerDefRoll()))}</span></div>
