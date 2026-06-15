@@ -82,8 +82,11 @@ const Toast = (() => {
         ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
       </div>`;
     container.appendChild(el);
+    // Keep the stack short so rapid notifications (e.g. level-ups) don't fill
+    // the screen — drop the oldest beyond the most recent few.
+    while (container.children.length > 4) container.firstChild.remove();
     Haptics.vibrate(isAchievement ? [50, 30, 80] : 40);
-    setTimeout(() => el.remove(), 3200);
+    setTimeout(() => el.remove(), 2600);
   }
   return { show };
 })();
