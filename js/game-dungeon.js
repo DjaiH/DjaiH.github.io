@@ -279,7 +279,8 @@
   let S = null, tickFn = null, autosaveTimer = null;
   let progress = 0;            // seconds accumulated on the active action (transient)
   let cmb = null;              // transient combat state { id, mhp, php, pAtk, mAtk, flash }
-  let renderThrottle = 0;
+  let headerThrottle = 0, contentThrottle = 0;
+  let contentTouching = false; // user is touching the tab list — pause re-renders
   let hiddenAt = 0;            // timestamp the screen was hidden (for away catch-up)
 
   function defaultState() {
@@ -310,7 +311,7 @@
     const a = skillLevel('attack'), st = skillLevel('strength'), d = skillLevel('defence'), h = skillLevel('hitpoints');
     return Math.floor(0.25 * (d + h) + 0.325 * (a + st));
   }
-  function maxHp() { return skillLevel('hitpoints') * 10; }
+  function maxHp() { return Math.floor(skillLevel('hitpoints') * 10 * (1 + 0.04 * shopLvl('bulwark'))); }
   function addXp(id, amount) {
     if (!amount) return;
     amount = Math.round(amount * globalXpMul());   // Tome of Learning
@@ -339,8 +340,24 @@
   }
 
   /* ── Bank helpers ────────────────────────────────────────────── */
+  // Bag space limits how many distinct *material* stacks you can hold
+  // (gear/gems/amulets/capes never count and are never blocked). When full,
+  // a brand-new material is auto-sold for coins instead of lost.
+  const BAG_BASE = 30;
+  const MATERIAL_TYPES = { log: 1, raw: 1, food: 1, ore: 1, bar: 1 };
+  function isMaterial(id) { return !!MATERIAL_TYPES[(ITEMS[id] || {}).type]; }
+  function bankSlotsMax() { return BAG_BASE + 5 * shopLvl('bagspace'); }
+  function bankSlotsUsed() { return Object.keys(S.bank).filter(k => isMaterial(k) && S.bank[k] > 0).length; }
   function bankCount(id) { return (S.bank && S.bank[id]) || 0; }
-  function bankAdd(id, q) { S.bank[id] = bankCount(id) + q; }
+  function bankAdd(id, q) {
+    if (id !== 'coins' && isMaterial(id) && bankCount(id) === 0 && bankSlotsUsed() >= bankSlotsMax()) {
+      const gold = ((ITEMS[id] || {}).value || 1) * q;          // bag full → auto-sell the new material
+      S.bank.coins = (S.bank.coins || 0) + gold;
+      Toast.show('🎒', 'Bag full', `Sold ${q}× ${itemName(id)} +${Fmt.format(gold)}🪙`);
+      return;
+    }
+    S.bank[id] = bankCount(id) + q;
+  }
   function bankRemove(id, q) { const n = bankCount(id) - q; if (n > 0) S.bank[id] = n; else delete S.bank[id]; }
   function hasInputs(inputs) { return Object.keys(inputs).every(k => bankCount(k) >= inputs[k]); }
   function spendInputs(inputs) { Object.keys(inputs).forEach(k => bankRemove(k, inputs[k])); }
@@ -360,6 +377,7 @@
     bonusPct += masterySpeed(a.id);                                // per-action mastery
     if (capeHelps(a.skill)) bonusPct += 0.15;                      // matching skill cape
     if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + bonus('amulet', 'gspeed') + 0.03 * shopLvl('gloves') + 0.03 * slayerLvlOf('sl_speed');
+    else bonusPct += 0.05 * shopLvl('haste'); // Swift Cooking — production skills (fire/cook/smith)
     if (a.skill === 'smithing') bonusPct += Math.min(0.20, skillLevel('mining') * 0.002); // mining→smithing synergy
     return Math.max(0.3, a.time * (1 - Math.min(0.75, bonusPct)));
   }
@@ -368,7 +386,7 @@
     return Math.max(0, a.burn - skillLevel('cooking') * 0.01 - skillLevel('firemaking') * 0.003);
   }
   // Rare-drop multiplier: Amulet of Foraging/Skill/Glory boost gem chances.
-  function rareBonus() { return 1 + bonus('amulet', 'rare'); }
+  function rareBonus() { return 1 + bonus('amulet', 'rare') + 0.06 * shopLvl('lucky'); }
   // Cooking synergy + Iron Stomach shop upgrade: food heals more.
   function foodHeal(id) { return Math.floor((ITEMS[id].heal || 0) * (1 + 0.005 * skillLevel('cooking') + 0.05 * shopLvl('stomach'))); }
 
@@ -393,22 +411,30 @@
 
   /* ── Coin Store: permanent, stacking, coin-sink upgrades ─────── */
   const SHOP = [
-    { id:'gloves',  name:'Gathering Gloves', icon:'🧤', max:10, base:500,  mul:1.8, fmt:l=>`+${l*3}% gathering speed` },
-    { id:'tome',    name:'Tome of Learning', icon:'📖', max:10, base:2000, mul:2.0, fmt:l=>`+${l*2}% XP from everything` },
-    { id:'stomach', name:'Iron Stomach',     icon:'🍖', max:10, base:900,  mul:1.7, fmt:l=>`+${l*5}% food healing` },
-    { id:'whet',    name:'Whetstone',        icon:'🎯', max:10, base:1500, mul:1.9, fmt:l=>`+${l*3}% combat damage` },
-    { id:'charm',   name:'Offline Charm',    icon:'⏳', max:12, base:1200, mul:1.6, fmt:l=>`+${l*2}h offline cap (${24 + l*2}h total)` },
+    { id:'gloves',  name:'Gathering Gloves', icon:'🧤', max:10, base:500,   mul:1.8, fmt:l=>`+${l*3}% gathering speed` },
+    { id:'tome',    name:'Tome of Learning', icon:'📖', max:10, base:2000,  mul:2.0, fmt:l=>`+${l*2}% XP from everything` },
+    { id:'stomach', name:'Iron Stomach',     icon:'🍖', max:10, base:900,   mul:1.7, fmt:l=>`+${l*5}% food healing` },
+    { id:'whet',    name:'Whetstone',        icon:'🎯', max:10, base:1500,  mul:1.9, fmt:l=>`+${l*3}% combat damage` },
+    { id:'keen',    name:'Keen Edge',        icon:'🗡️', max:10, base:1500,  mul:1.9, fmt:l=>`+${l*3}% combat accuracy` },
+    { id:'bulwark', name:'Bulwark Training', icon:'🛡️', max:10, base:1800,  mul:1.9, fmt:l=>`+${l*4}% max HP` },
+    { id:'lucky',   name:'Lucky Charm',      icon:'🍀', max:10, base:2500,  mul:2.0, fmt:l=>`+${l*6}% rare-drop chance` },
+    { id:'magnet',  name:'Coin Magnet',      icon:'💰', max:10, base:1200,  mul:1.8, fmt:l=>`+${l*6}% coins from kills` },
+    { id:'haste',   name:'Swift Cooking',    icon:'⚗️', max:5,  base:3000,  mul:2.1, fmt:l=>`-${l*5}% production time` },
+    { id:'bagspace',name:'Bag Space',        icon:'🎒', max:10, base:800,   mul:1.7, fmt:l=>`+${l*5} bag slots (${BAG_BASE + l*5} total)` },
+    { id:'charm',   name:'Offline Charm',    icon:'⏳', max:12, base:1200,  mul:1.6, fmt:l=>`+${l*2}h offline cap (${24 + l*2}h total)` },
   ];
   function shopLvl(id) { return (S.shop && S.shop[id]) || 0; }
   function shopDef(id) { return SHOP.find(s => s.id === id); }
   function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
   function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + bonus('cape', 'gxp'); }
   function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat(); }
+  function combatAccMul() { return 1 + 0.03 * shopLvl('keen'); }
+  function coinMul()      { return 1 + 0.06 * shopLvl('magnet'); }
   function offlineCap()   { return OFFLINE_CAP + shopLvl('charm') * 7200; }
 
   /* ── Combat math ─────────────────────────────────────────────── */
   function playerMaxHit() { return Math.floor((2 + (skillLevel('strength') + bonus('weapon', 'str') + bonus('amulet', 'str')) * 0.22) * combatDmgMul()); }
-  function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + (bonus('weapon', 'acc') + bonus('amulet', 'acc')) / 48); }
+  function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + (bonus('weapon', 'acc') + bonus('amulet', 'acc')) / 48) * combatAccMul(); }
   function playerDefRoll() { return (skillLevel('defence') + bonus('armor', 'def') + 8); }
   function hitChance(atkRoll, defRoll) { return atkRoll / (atkRoll + defRoll); }
   function playerDps(m) {
@@ -498,7 +524,7 @@
   function killMonster(m) {
     addXp(styleSkill(), m.xp);
     addXp('hitpoints', Math.round(m.xp * 0.33));
-    const coins = m.coins[0] + Math.floor(Math.random() * (m.coins[1] - m.coins[0] + 1));
+    const coins = Math.round((m.coins[0] + Math.floor(Math.random() * (m.coins[1] - m.coins[0] + 1))) * coinMul());
     bankAdd('coins', coins);
     (m.drops || []).forEach(d => {
       if (Math.random() < d.chance) {
@@ -566,15 +592,23 @@
       let guard = 0;
       while (progress >= eff && S.action && guard++ < 50) { progress -= eff; if (!completeSkillCycle(a)) { progress = 0; break; } }
     }
-    renderThrottle += dt;
-    if (renderThrottle >= 0.25) {
-      renderThrottle = 0;
-      if (document.getElementById('screen-dungeon').classList.contains('active')) {
-        renderActiveHeader();
-        if (activeTab === 'bank') renderBankTab();
-      }
-    }
+    if (!document.getElementById('screen-dungeon').classList.contains('active')) return;
+    // Header/progress bar updates often (smooth); the tab list rebuilds less
+    // often and never mid-touch, to avoid tap-loss and scroll jank.
+    headerThrottle += dt;
+    if (headerThrottle >= 0.25) { headerThrottle = 0; renderTopbar(); renderActiveHeader(); }
+    contentThrottle += dt;
+    if (contentThrottle >= 0.6) { contentThrottle = 0; liveRenderTab(); }
   };
+  // Re-render the open tab, preserving scroll; skipped while the user is
+  // touching the list so a tap or scroll is never interrupted.
+  function liveRenderTab() {
+    if (contentTouching) return;
+    const area = document.getElementById('rl-content');
+    const top = area ? area.scrollTop : 0;
+    renderActiveTab();
+    if (area) area.scrollTop = top;
+  }
 
   /* ── Slayer tasks ────────────────────────────────────────────── */
   function completeSlayerTask(m) {
@@ -745,7 +779,7 @@
             const sx = Math.round(m.xp * kills * gxp), hx = Math.round(m.xp * 0.33 * kills * gxp);
             d.skillsXp[styleSkill()] = (d.skillsXp[styleSkill()] || 0) + sx;
             d.skillsXp.hitpoints = (d.skillsXp.hitpoints || 0) + hx;
-            const coins = Math.round((m.coins[0] + m.coins[1]) / 2 * kills);
+            const coins = Math.round((m.coins[0] + m.coins[1]) / 2 * kills * coinMul());
             bankAdd('coins', coins);
             (m.drops || []).forEach(dr => { const got = Math.floor(kills * dr.chance + Math.random()); if (got > 0) bankAdd(dr.item, got * (((dr.min + dr.max) >> 1) || 1)); });
             // consume the food that was used (cheapest first)
@@ -801,6 +835,8 @@
   /* ── Rendering ───────────────────────────────────────────────── */
   let activeTab = localStorage.getItem('rl_tab') || 'skills';
   let sellAmt = localStorage.getItem('rl_sellAmt') || '1';
+  const expandedDrops = new Set();   // monster ids whose drop table is expanded
+  window.IdleRealm_toggleDrops = function(id) { expandedDrops.has(id) ? expandedDrops.delete(id) : expandedDrops.add(id); renderCombatTab(); };
 
   window.IdleRealm_tab = function(tab, btn) {
     activeTab = tab; localStorage.setItem('rl_tab', tab);
@@ -1025,20 +1061,31 @@
       MONSTERS.filter(m => m.zone === z).forEach(m => {
         const locked = combatLevel() < m.reqCb;
         const active = S.action && S.action.type === 'combat' && S.action.id === m.id;
-        const dropTxt = (m.drops || []).length ? ' · drops ' + m.drops.map(d => itemIcon(d.item)).join('') : '';
-        html += `<button class="upgrade-item ${active ? '' : (locked ? 'locked' : 'can-buy')}" onclick="IdleRealm_fight('${m.id}')" style="${active ? 'border-color:var(--accent)' : ''}">
+        const hasDrops = (m.drops || []).length > 0;
+        const open = expandedDrops.has(m.id);
+        html += `<div class="upgrade-item" style="${active ? 'border-color:var(--accent)' : (locked ? 'opacity:0.55' : '')}">
             <div class="upg-icon">${m.icon}</div>
             <div class="upg-info">
               <div class="upg-name">${m.name} ${active ? '<span class="text-accent" style="font-size:11px">● fighting</span>' : ''}</div>
-              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Combat Lv.${m.reqCb}` : `${m.hp} HP · max hit ${m.maxHit} · +${m.xp} xp${dropTxt}`}</div>
+              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Combat Lv.${m.reqCb}` : `${Fmt.format(m.hp)} HP · max hit ${m.maxHit} · +${m.xp} xp · 🪙${m.coins[0]}-${m.coins[1]}`}</div>
             </div>
-            <div style="flex-shrink:0;font-size:12px;color:var(--text2)">CB ${m.reqCb}</div>
-          </button>`;
+            <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;align-items:flex-end">
+              <button class="bld-level ${locked ? 'locked' : 'can-buy'}" onclick="IdleRealm_fight('${m.id}')">${active ? '⚔️ ●' : 'Fight'}</button>
+              ${hasDrops ? `<button class="bld-level" onclick="IdleRealm_toggleDrops('${m.id}')">${open ? '▾ drops' : '▸ drops'}</button>` : ''}
+            </div>
+          </div>`;
+        if (open && hasDrops) {
+          html += `<div style="margin:-2px 2px 4px;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+            <div style="color:var(--text2);margin-bottom:3px">Drop table (per kill):</div>
+            ${m.drops.map(d => `<div style="display:flex;justify-content:space-between"><span>${itemIcon(d.item)} ${itemName(d.item)}${d.max > 1 ? ` ×${d.min}-${d.max}` : ''}</span><span class="${d.chance >= 0.05 ? 'text-green' : 'text-gold'}">${dropPct(d.chance)}</span></div>`).join('')}
+          </div>`;
+        }
       });
     });
     html += '</div>';
     list.innerHTML = html;
   }
+  function dropPct(c) { return c >= 0.01 ? Math.round(c * 100) + '%' : (c * 100).toFixed(1) + '%'; }
 
   function renderBankTab() {
     const list = document.getElementById('rl-content');
@@ -1047,7 +1094,11 @@
     const order = { currency: 0, gear: 1, food: 2, bar: 3, ore: 4, log: 5, raw: 6, treasure: 7 };
     ids.sort((a, b) => (order[(ITEMS[a] || {}).type] ?? 9) - (order[(ITEMS[b] || {}).type] ?? 9));
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
-    html += `<div style="font-size:12px;color:var(--text2)">Bank — tap gear to equip, or sell items for coins.</div>`;
+    const slotsFull = bankSlotsUsed() >= bankSlotsMax();
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text2)">
+        <span>Tap gear to equip, or sell items for coins.</span>
+        <span style="${slotsFull ? 'color:var(--red)' : ''}">🎒 ${bankSlotsUsed()}/${bankSlotsMax()} slots</span>
+      </div>`;
     // Sell-amount selector — choose how many to sell per tap
     const amts = [['1', '×1'], ['10', '×10'], ['100', '×100'], ['all', 'All']];
     html += `<div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--text2)">Sell</span>${amts.map(([v, l]) => `<button class="buy-amt-btn ${sellAmt === v ? 'active' : ''}" onclick="IdleRealm_setSellAmt('${v}')">${l}</button>`).join('')}</div>`;
@@ -1076,6 +1127,63 @@
             ${id !== 'coins' ? `<button class="bld-level" onclick="IdleRealm_sell('${id}')" style="color:var(--gold)">🪙${Fmt.format((it.value || 1) * nSell)}${sellAmt !== 'all' && have > nSell ? ` ×${nSell}` : ''}</button>` : ''}
           </div>
         </div>`;
+    });
+    html += '</div>';
+    list.innerHTML = html;
+  }
+
+  // Short human description of what an item does / is for.
+  function itemEffect(id) {
+    const it = ITEMS[id]; if (!it) return '';
+    if (it.slot === 'weapon') return `Weapon · +${it.acc} accuracy, +${it.str} strength`;
+    if (it.slot === 'armor')  return `Armor · +${it.def} defence`;
+    if (it.slot === 'tool')   return `Tool · +${Math.round(it.speed * 100)}% gathering speed`;
+    if (it.slot === 'amulet') return 'Amulet · ' + [it.acc ? `+${it.acc} acc` : '', it.str ? `+${it.str} str` : '', it.gspeed ? `+${Math.round(it.gspeed * 100)}% gather` : '', it.rare ? `+${Math.round(it.rare * 100)}% rare drops` : ''].filter(Boolean).join(', ');
+    if (it.slot === 'cape')   return `Cape · +${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' + all perks' : ` + ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
+    if (it.type === 'food')   return `Food · heals ${it.heal} (more with Cooking)`;
+    if (it.type === 'log')    return 'Logs · burn for Firemaking XP';
+    if (it.type === 'raw')    return 'Raw fish · cook into food';
+    if (it.type === 'ore')    return 'Ore · smelt into bars';
+    if (it.type === 'bar')    return 'Bar · forge into gear';
+    if (it.type === 'uncut')  return 'Uncut gem · cut at the forge';
+    if (it.type === 'gem')    return 'Cut gem · craft into amulets';
+    if (it.type === 'currency') return 'Currency';
+    return it.type || '';
+  }
+  function renderItemsTab() {
+    const list = document.getElementById('rl-content');
+    if (!list || activeTab !== 'items') return;
+    const groups = [
+      ['Weapons', id => ITEMS[id].slot === 'weapon'],
+      ['Armor',   id => ITEMS[id].slot === 'armor'],
+      ['Tools',   id => ITEMS[id].slot === 'tool'],
+      ['Amulets', id => ITEMS[id].slot === 'amulet'],
+      ['Capes',   id => ITEMS[id].slot === 'cape'],
+      ['Food',    id => ITEMS[id].type === 'food'],
+      ['Raw fish',id => ITEMS[id].type === 'raw'],
+      ['Logs',    id => ITEMS[id].type === 'log'],
+      ['Ores',    id => ITEMS[id].type === 'ore'],
+      ['Bars',    id => ITEMS[id].type === 'bar'],
+      ['Gems',    id => ITEMS[id].type === 'uncut' || ITEMS[id].type === 'gem'],
+    ];
+    const ids = Object.keys(ITEMS);
+    let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
+    html += `<div style="font-size:12px;color:var(--text2)">Every item in the game, its effect, sell value, and how many you own (✓ = owned).</div>`;
+    groups.forEach(([label, test]) => {
+      const members = ids.filter(id => { try { return test(id); } catch { return false; } });
+      if (!members.length) return;
+      html += `<div class="menu-section-title" style="padding:8px 2px 2px">${label}</div>`;
+      members.forEach(id => {
+        const it = ITEMS[id], have = bankCount(id);
+        html += `<div class="upgrade-item" style="${have ? 'border-color:var(--accent)' : ''}">
+            <div class="upg-icon">${it.icon}</div>
+            <div class="upg-info">
+              <div class="upg-name">${it.name} ${have ? `<span class="text-accent" style="font-size:11px">✓ ${Fmt.format(have)}</span>` : ''}</div>
+              <div style="font-size:12px;color:var(--text2)">${itemEffect(id)}</div>
+            </div>
+            <div style="flex-shrink:0;font-size:12px;color:var(--gold)">${it.value ? '🪙' + Fmt.format(it.value) : ''}</div>
+          </div>`;
+      });
     });
     html += '</div>';
     list.innerHTML = html;
@@ -1125,15 +1233,19 @@
     list.innerHTML = html;
   }
 
-  function renderAll() {
-    if (!S) return;
-    renderTopbar(); renderActiveHeader();
+  function renderActiveTab() {
     if (activeTab === 'skills') renderSkillsTab();
     else if (activeTab === 'combat') renderCombatTab();
     else if (activeTab === 'slayer') renderSlayerTab();
     else if (activeTab === 'bank') renderBankTab();
     else if (activeTab === 'store') renderStoreTab();
+    else if (activeTab === 'items') renderItemsTab();
     else if (activeTab === 'stats') renderStatsTab();
+  }
+  function renderAll() {
+    if (!S) return;
+    renderTopbar(); renderActiveHeader();
+    renderActiveTab();
   }
 
   /* ── Help ────────────────────────────────────────────────────── */
@@ -1183,11 +1295,22 @@
             <button class="tab-btn" data-tab="slayer" style="min-width:72px" onclick="IdleRealm_tab('slayer',this)">💀 Slayer</button>
             <button class="tab-btn" data-tab="bank"   style="min-width:64px" onclick="IdleRealm_tab('bank',this)">🎒 Bank</button>
             <button class="tab-btn" data-tab="store"  style="min-width:64px" onclick="IdleRealm_tab('store',this)">🛒 Store</button>
+            <button class="tab-btn" data-tab="items"  style="min-width:64px" onclick="IdleRealm_tab('items',this)">📖 Items</button>
             <button class="tab-btn" data-tab="stats"  style="min-width:64px" onclick="IdleRealm_tab('stats',this)">📊 Stats</button>
           </div>
           <div id="rl-content"></div>
         </div>
       </div>`;
+    // Pause live re-renders while the user is scrolling/tapping the list.
+    const area = document.getElementById('rl-content');
+    if (area) {
+      const on = () => { contentTouching = true; };
+      const off = () => { setTimeout(() => { contentTouching = false; }, 350); };
+      area.addEventListener('touchstart', on, { passive: true });
+      area.addEventListener('touchend', off, { passive: true });
+      area.addEventListener('pointerdown', on);
+      area.addEventListener('pointerup', off);
+    }
   }
 
   /* ── Register with Router ────────────────────────────────────── */
