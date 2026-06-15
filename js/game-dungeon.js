@@ -279,7 +279,8 @@
   let S = null, tickFn = null, autosaveTimer = null;
   let progress = 0;            // seconds accumulated on the active action (transient)
   let cmb = null;              // transient combat state { id, mhp, php, pAtk, mAtk, flash }
-  let renderThrottle = 0;
+  let headerThrottle = 0, contentThrottle = 0;
+  let contentTouching = false; // user is touching the tab list — pause re-renders
   let hiddenAt = 0;            // timestamp the screen was hidden (for away catch-up)
 
   function defaultState() {
@@ -339,8 +340,24 @@
   }
 
   /* ── Bank helpers ────────────────────────────────────────────── */
+  // Bag space limits how many distinct *material* stacks you can hold
+  // (gear/gems/amulets/capes never count and are never blocked). When full,
+  // a brand-new material is auto-sold for coins instead of lost.
+  const BAG_BASE = 30;
+  const MATERIAL_TYPES = { log: 1, raw: 1, food: 1, ore: 1, bar: 1 };
+  function isMaterial(id) { return !!MATERIAL_TYPES[(ITEMS[id] || {}).type]; }
+  function bankSlotsMax() { return BAG_BASE + 5 * shopLvl('bagspace'); }
+  function bankSlotsUsed() { return Object.keys(S.bank).filter(k => isMaterial(k) && S.bank[k] > 0).length; }
   function bankCount(id) { return (S.bank && S.bank[id]) || 0; }
-  function bankAdd(id, q) { S.bank[id] = bankCount(id) + q; }
+  function bankAdd(id, q) {
+    if (id !== 'coins' && isMaterial(id) && bankCount(id) === 0 && bankSlotsUsed() >= bankSlotsMax()) {
+      const gold = ((ITEMS[id] || {}).value || 1) * q;          // bag full → auto-sell the new material
+      S.bank.coins = (S.bank.coins || 0) + gold;
+      Toast.show('🎒', 'Bag full', `Sold ${q}× ${itemName(id)} +${Fmt.format(gold)}🪙`);
+      return;
+    }
+    S.bank[id] = bankCount(id) + q;
+  }
   function bankRemove(id, q) { const n = bankCount(id) - q; if (n > 0) S.bank[id] = n; else delete S.bank[id]; }
   function hasInputs(inputs) { return Object.keys(inputs).every(k => bankCount(k) >= inputs[k]); }
   function spendInputs(inputs) { Object.keys(inputs).forEach(k => bankRemove(k, inputs[k])); }
@@ -403,6 +420,7 @@
     { id:'lucky',   name:'Lucky Charm',      icon:'🍀', max:10, base:2500,  mul:2.0, fmt:l=>`+${l*6}% rare-drop chance` },
     { id:'magnet',  name:'Coin Magnet',      icon:'💰', max:10, base:1200,  mul:1.8, fmt:l=>`+${l*6}% coins from kills` },
     { id:'haste',   name:'Swift Cooking',    icon:'⚗️', max:5,  base:3000,  mul:2.1, fmt:l=>`-${l*5}% production time` },
+    { id:'bagspace',name:'Bag Space',        icon:'🎒', max:10, base:800,   mul:1.7, fmt:l=>`+${l*5} bag slots (${BAG_BASE + l*5} total)` },
     { id:'charm',   name:'Offline Charm',    icon:'⏳', max:12, base:1200,  mul:1.6, fmt:l=>`+${l*2}h offline cap (${24 + l*2}h total)` },
   ];
   function shopLvl(id) { return (S.shop && S.shop[id]) || 0; }
@@ -574,19 +592,20 @@
       let guard = 0;
       while (progress >= eff && S.action && guard++ < 50) { progress -= eff; if (!completeSkillCycle(a)) { progress = 0; break; } }
     }
-    renderThrottle += dt;
-    if (renderThrottle >= 0.25) {
-      renderThrottle = 0;
-      if (document.getElementById('screen-dungeon').classList.contains('active')) liveRender();
-    }
+    if (!document.getElementById('screen-dungeon').classList.contains('active')) return;
+    // Header/progress bar updates often (smooth); the tab list rebuilds less
+    // often and never mid-touch, to avoid tap-loss and scroll jank.
+    headerThrottle += dt;
+    if (headerThrottle >= 0.25) { headerThrottle = 0; renderTopbar(); renderActiveHeader(); }
+    contentThrottle += dt;
+    if (contentThrottle >= 0.6) { contentThrottle = 0; liveRenderTab(); }
   };
-  // Re-render the header + whatever tab is open, preserving scroll position so
-  // counts/levels/ETAs update in real time (not only after a click).
-  function liveRender() {
+  // Re-render the open tab, preserving scroll; skipped while the user is
+  // touching the list so a tap or scroll is never interrupted.
+  function liveRenderTab() {
+    if (contentTouching) return;
     const area = document.getElementById('rl-content');
     const top = area ? area.scrollTop : 0;
-    renderTopbar();
-    renderActiveHeader();
     renderActiveTab();
     if (area) area.scrollTop = top;
   }
@@ -1075,7 +1094,11 @@
     const order = { currency: 0, gear: 1, food: 2, bar: 3, ore: 4, log: 5, raw: 6, treasure: 7 };
     ids.sort((a, b) => (order[(ITEMS[a] || {}).type] ?? 9) - (order[(ITEMS[b] || {}).type] ?? 9));
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
-    html += `<div style="font-size:12px;color:var(--text2)">Bank — tap gear to equip, or sell items for coins.</div>`;
+    const slotsFull = bankSlotsUsed() >= bankSlotsMax();
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text2)">
+        <span>Tap gear to equip, or sell items for coins.</span>
+        <span style="${slotsFull ? 'color:var(--red)' : ''}">🎒 ${bankSlotsUsed()}/${bankSlotsMax()} slots</span>
+      </div>`;
     // Sell-amount selector — choose how many to sell per tap
     const amts = [['1', '×1'], ['10', '×10'], ['100', '×100'], ['all', 'All']];
     html += `<div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--text2)">Sell</span>${amts.map(([v, l]) => `<button class="buy-amt-btn ${sellAmt === v ? 'active' : ''}" onclick="IdleRealm_setSellAmt('${v}')">${l}</button>`).join('')}</div>`;
@@ -1278,6 +1301,16 @@
           <div id="rl-content"></div>
         </div>
       </div>`;
+    // Pause live re-renders while the user is scrolling/tapping the list.
+    const area = document.getElementById('rl-content');
+    if (area) {
+      const on = () => { contentTouching = true; };
+      const off = () => { setTimeout(() => { contentTouching = false; }, 350); };
+      area.addEventListener('touchstart', on, { passive: true });
+      area.addEventListener('touchend', off, { passive: true });
+      area.addEventListener('pointerdown', on);
+      area.addEventListener('pointerup', off);
+    }
   }
 
   /* ── Register with Router ────────────────────────────────────── */
