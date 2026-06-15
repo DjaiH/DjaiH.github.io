@@ -294,6 +294,38 @@ scrollbar-color: var(--border) transparent;
 }
 .tab-btn.active { color: var(--accent); border-color: var(--accent); }
 
+/* ─── LIST ITEMS / BUTTONS (shared by all games) ──────────────────
+   These were previously injected only by Cookie Clicker, which left
+   Idle Realm unstyled until Cookie Clicker had been opened. They live
+   here now so every game always has them. */
+.upgrade-item, .building-item {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+  text-align: left; width: 100%;
+}
+.upgrade-item:active, .building-item:active { border-color: var(--accent); }
+.upgrade-item.locked, .building-item.locked { opacity: 0.55; }
+.upgrade-item.can-buy, .building-item.can-buy { border-color: var(--green); }
+.upgrade-item.can-buy:active, .building-item.can-buy:active { border-color: var(--accent); }
+.upg-icon, .bld-icon { font-size: 24px; flex-shrink: 0; }
+.upg-info, .bld-info { flex: 1; }
+.upg-name, .bld-name { font-size: 14px; font-weight: 600; }
+.upg-cost, .bld-cost { font-size: 13px; }
+.upg-effect { font-size: 13px; font-weight: 600; flex-shrink: 0; }
+.bld-count  { background: var(--accent); color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 12px; margin-left: 4px; }
+.bld-desc   { font-size: 12px; margin-top: 2px; }
+.bld-level  { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 8px;
+              background: var(--bg3); border: 1px solid var(--border); color: var(--gold); font-size: 11px; }
+.bld-level.locked { opacity: 0.5; }
+.bld-level.can-buy { border-color: var(--green); color: var(--green); }
+.bld-level:active { background: var(--border); }
+.buy-amt-label { font-size: 12px; color: var(--text2); margin-right: 2px; }
+.buy-amt-btn { padding: 4px 12px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
+               background: var(--bg3); border: 1px solid var(--border); color: var(--text2); }
+.buy-amt-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.stat-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+
 /* ─── SAVE/SETTINGS SCREEN ───────────────────────────────────── */
 #screen-save {
   padding: 16px;

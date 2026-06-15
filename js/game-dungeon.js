@@ -439,6 +439,9 @@
   function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + (bonus('weapon', 'acc') + bonus('amulet', 'acc')) / 48) * combatAccMul(); }
   function playerDefRoll() { return (skillLevel('defence') + bonus('armor', 'def') + 8); }
   function hitChance(atkRoll, defRoll) { return atkRoll / (atkRoll + defRoll); }
+  // Combat XP per kill scales with both HP and defence (difficulty), so tougher
+  // monsters give the best XP/sec — not the weakest ones you trivially one-shot.
+  function monsterXp(m) { return Math.round(m.hp * 0.5 + m.def * 5); }
   function playerDps(m) {
     const hc = hitChance(playerAtkRoll(), m.def + 8);
     return (playerMaxHit() / 2) * hc / PATK_INT;
@@ -524,8 +527,9 @@
   }
 
   function killMonster(m) {
-    addXp(styleSkill(), m.xp);
-    addXp('hitpoints', Math.round(m.xp * 0.33));
+    const mx = monsterXp(m);
+    addXp(styleSkill(), mx);
+    addXp('hitpoints', Math.round(mx * 0.33));
     const coins = Math.round((m.coins[0] + Math.floor(Math.random() * (m.coins[1] - m.coins[0] + 1))) * coinMul());
     bankAdd('coins', coins);
     (m.drops || []).forEach(d => {
@@ -540,7 +544,7 @@
     S.kills++;
     // Slayer: progress the assigned task when fighting the right monster
     if (S.slayer && S.slayer.task === m.id && S.slayer.left > 0) {
-      addXp('slayer', Math.round(m.xp * 0.8));
+      addXp('slayer', Math.round(monsterXp(m) * 0.8));
       S.slayer.left--;
       if (S.slayer.left <= 0) completeSlayerTask(m);
     }
@@ -778,7 +782,8 @@
           const sustainSecs = (maxHp() + foodPool) / Math.max(0.01, dmgPerSec);
           if (sustainSecs < elapsed) kills = Math.min(kills, Math.floor(sustainSecs / ttk));
           if (kills > 0) {
-            const sx = Math.round(m.xp * kills * gxp), hx = Math.round(m.xp * 0.33 * kills * gxp);
+            const mx = monsterXp(m);
+            const sx = Math.round(mx * kills * gxp), hx = Math.round(mx * 0.33 * kills * gxp);
             d.skillsXp[styleSkill()] = (d.skillsXp[styleSkill()] || 0) + sx;
             d.skillsXp.hitpoints = (d.skillsXp.hitpoints || 0) + hx;
             const coins = Math.round((m.coins[0] + m.coins[1]) / 2 * kills * coinMul());
@@ -918,7 +923,7 @@
   // ETA line for combat: time to next level (and to 99) of the trained style skill
   function combatEtaLine(m) {
     const kps = playerDps(m) / m.hp;                 // kills per second
-    const xpPerSec = kps * m.xp * globalXpMul();
+    const xpPerSec = kps * monsterXp(m) * globalXpMul();
     const sk = SKILL[styleSkill()], lvl = skillLevel(styleSkill());
     if (lvl >= MAX_LEVEL || xpPerSec <= 0) return `⏳ ${sk.name} <b class="text-gold">maxed</b> · ~${Fmt.time(1 / kps)}/kill`;
     const tl = (xpForLevel(lvl + 1) - skillXp(styleSkill())) / xpPerSec;
@@ -1077,7 +1082,7 @@
             <div class="upg-icon">${m.icon}</div>
             <div class="upg-info">
               <div class="upg-name">${m.name} ${active ? '<span class="text-accent" style="font-size:11px">● fighting</span>' : ''}</div>
-              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Combat Lv.${m.reqCb}` : `${Fmt.format(m.hp)} HP · enemy hits ≤${m.maxHit} · +${m.xp} xp · 🪙${m.coins[0]}-${m.coins[1]}`}</div>
+              <div style="font-size:12px;color:var(--text2)">${locked ? `🔒 Combat Lv.${m.reqCb}` : `${Fmt.format(m.hp)} HP · enemy hits ≤${m.maxHit} · +${Fmt.format(monsterXp(m))} xp · 🪙${m.coins[0]}-${m.coins[1]}`}</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;align-items:flex-end">
               <button class="bld-level ${locked ? 'locked' : 'can-buy'}" onclick="IdleRealm_fight('${m.id}')">${active ? '⚔️ ●' : 'Fight'}</button>
