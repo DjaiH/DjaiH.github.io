@@ -124,6 +124,18 @@
     amulet_emerald: { name:'Amulet of Foraging', icon:'📿', type:'gear', slot:'amulet', tier:2, gspeed:0.15, rare:0.5, value:900 },
     amulet_diamond: { name:'Amulet of Skill',    icon:'📿', type:'gear', slot:'amulet', tier:3, acc:12, str:12, rare:0.3, value:2400 },
     amulet_glory:   { name:'Amulet of Glory',    icon:'🏵️', type:'gear', slot:'amulet', tier:4, acc:22, str:22, rare:0.6, value:8000 },
+    // ─── Unique super-rare drops (manual-equip build pieces; drop < 0.01%) ───
+    // Special weapons (weapon slot, but never auto-equipped — your choice)
+    weapon_dragonblade: { name:'Dragonblade',      icon:'🐉', type:'gear', slot:'weapon', unique:true, tier:7, acc:110, str:100, value:60000, trait:'Forged from a dragon — huge damage' },
+    weapon_abyssal:     { name:'Abyssal Edge',     icon:'🌀', type:'gear', slot:'weapon', unique:true, tier:8, acc:150, str:135, gxp:0.05, value:120000, trait:'+5% XP from kills' },
+    // Rings (new slot)
+    ring_power:   { name:'Ring of Power',    icon:'💍', type:'gear', slot:'ring', unique:true, tier:1, acc:30, str:30, value:40000, trait:'Raw combat might' },
+    ring_fortune: { name:'Ring of Fortune',  icon:'💍', type:'gear', slot:'ring', unique:true, tier:2, rare:1.0, gspeed:0.10, value:60000, trait:'+100% rare-drop chance, +10% gathering' },
+    ring_scholar: { name:'Ring of the Scholar', icon:'💍', type:'gear', slot:'ring', unique:true, tier:2, gxp:0.07, value:60000, trait:'+7% XP from everything' },
+    // Hats (new slot)
+    hat_slayer:   { name:"Slayer's Helm",    icon:'🪖', type:'gear', slot:'hat', unique:true, tier:2, acc:18, str:18, def:20, slayerPts:2, value:50000, trait:'+2 Slayer points per task' },
+    hat_anglers:  { name:"Angler's Hat",     icon:'🎣', type:'gear', slot:'hat', unique:true, tier:1, gspeed:0.12, gxp:0.03, value:30000, trait:'+12% gathering speed, +3% XP' },
+    hat_wisdom:   { name:'Crown of Wisdom',  icon:'👑', type:'gear', slot:'hat', unique:true, tier:3, gxp:0.10, def:15, value:90000, trait:'+10% XP from everything' },
   };
   // Skill capes — earned at level 99, a 'cape' equip slot. Each gives +5% global
   // XP plus a perk for its own domain; the Max Cape (all 99) gives +10% and all perks.
@@ -243,6 +255,11 @@
    ['wc_normal',0.4],['wc_oak',0.5],['wc_willow',0.6],['wc_teak',0.65],['wc_maple',0.7],['wc_mahogany',0.8],['wc_yew',0.9],['wc_magic',1.1],
    ['fs_shrimp',0.4],['fs_sardine',0.45],['fs_trout',0.5],['fs_salmon',0.6],['fs_tuna',0.65],['fs_lobster',0.7],['fs_sword',0.8],['fs_shark',1.0]]
     .forEach(([id, mult]) => { if (ACTION[id]) ACTION[id].rare = gemTable(mult); });
+  // Ultra-rare unique drops from specific gathering actions (chance < 0.01%)
+  [['mn_runite', 'ring_fortune', 0.00006], ['wc_magic', 'ring_scholar', 0.00007],
+   ['wc_magic', 'hat_wisdom', 0.00004], ['fs_shark', 'hat_anglers', 0.00009],
+   ['mn_runite', 'hat_wisdom', 0.00003]]
+    .forEach(([id, item, chance]) => { if (ACTION[id]) (ACTION[id].rare = ACTION[id].rare || []).push({ item, chance }); });
 
   /* ── Monsters (combat). reqCb gates by combat level. 6 zones. ─── */
   const MONSTERS = [
@@ -274,6 +291,13 @@
   ];
   const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m]));
   const ZONES = [...new Set(MONSTERS.map(m => m.zone))];
+  // Ultra-rare unique drops from specific monsters (chance < 0.01%)
+  [['green_dragon', 'weapon_dragonblade', 0.00006], ['red_dragon', 'weapon_dragonblade', 0.00009],
+   ['wyrm', 'weapon_abyssal', 0.00005], ['kraken', 'weapon_abyssal', 0.00008],
+   ['troll', 'ring_power', 0.00005], ['ogre', 'ring_power', 0.00007], ['demon', 'ring_power', 0.00009],
+   ['demon', 'hat_slayer', 0.00007], ['hellhound', 'hat_slayer', 0.00009],
+   ['kraken', 'ring_fortune', 0.00006]]
+    .forEach(([mid, item, chance]) => { const m = MONSTER[mid]; if (m) (m.drops = m.drops || []).push({ item, min: 1, max: 1, chance }); });
 
   /* ── State ───────────────────────────────────────────────────── */
   let S = null, tickFn = null, autosaveTimer = null;
@@ -290,7 +314,7 @@
       schema:      'realm',          // marker: distinguishes the reworked save
       skillsXp,
       bank:        { coins: 25 },
-      equip:       { weapon: null, armor: null, tool: null, amulet: null, cape: null },
+      equip:       { weapon: null, armor: null, tool: null, amulet: null, cape: null, ring: null, hat: null },
       action:      null,             // { type:'skill', id } | { type:'combat', id }
       combatStyle: 'attack',         // attack | strength | defence (Accurate/Aggressive/Defensive)
       mastery:     {},               // actionId -> mastery xp (per-action progression)
@@ -371,7 +395,24 @@
   /* ── Equipment / derived combat bonuses ──────────────────────── */
   function equippedItem(slot) { const id = S.equip[slot]; return id ? ITEMS[id] : null; }
   function bonus(slot, key)   { const it = equippedItem(slot); return (it && it[key]) || 0; }
-  function toolSpeed()        { return bonus('tool', 'speed'); }
+  // Sum a numeric bonus across ALL equipped slots (weapon/armor/tool/amulet/
+  // cape/ring/hat) — lets new slots and unique items contribute everywhere.
+  function eqSum(key) { let t = 0; for (const sl in S.equip) { const it = equippedItem(sl); if (it && typeof it[key] === 'number') t += it[key]; } return t; }
+  // Human-readable list of a gear item's bonuses (used in Bank, Codex, Hero).
+  function gearDesc(it) {
+    if (!it) return '';
+    const p = [];
+    if (it.acc) p.push(`+${it.acc} acc`);
+    if (it.str) p.push(`+${it.str} str`);
+    if (it.def) p.push(`+${it.def} def`);
+    if (it.speed) p.push(`+${Math.round(it.speed * 100)}% gather`);
+    if (it.gspeed) p.push(`+${Math.round(it.gspeed * 100)}% gather`);
+    if (it.rare) p.push(`+${Math.round(it.rare * 100)}% rare`);
+    if (it.gxp) p.push(`+${Math.round(it.gxp * 100)}% XP`);
+    if (it.slayerPts) p.push(`+${it.slayerPts} slayer pts`);
+    return p.join(' · ');
+  }
+  function toolSpeed()        { return eqSum('speed') + eqSum('gspeed'); }
   // Skill-cape perks: does the worn cape help this skill / combat / cooking?
   function capeHelps(skillId) { const c = equippedItem('cape'); return !!c && (c.perkSkill === skillId || c.perkSkill === 'all'); }
   function capeCombat()       { const c = equippedItem('cape'); return c && (c.perkType === 'combat' || c.perkType === 'all') ? 0.05 : 0; }
@@ -382,7 +423,7 @@
     let bonusPct = Math.min(0.30, skillLevel(a.skill) * 0.0025);   // up to -30% from level
     bonusPct += masterySpeed(a.id);                                // per-action mastery
     if (capeHelps(a.skill)) bonusPct += 0.15;                      // matching skill cape
-    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + bonus('amulet', 'gspeed') + 0.03 * shopLvl('gloves') + 0.03 * slayerLvlOf('sl_speed');
+    if (a.skill === 'woodcutting' || a.skill === 'fishing' || a.skill === 'mining') bonusPct += toolSpeed() + 0.03 * shopLvl('gloves') + 0.03 * slayerLvlOf('sl_speed');
     else bonusPct += 0.05 * shopLvl('haste'); // Swift Cooking — production skills (fire/cook/smith)
     if (a.skill === 'smithing') bonusPct += Math.min(0.20, skillLevel('mining') * 0.002); // mining→smithing synergy
     return Math.max(0.3, a.time * (1 - Math.min(0.75, bonusPct)));
@@ -391,8 +432,8 @@
     if (capeHelps('cooking')) return 0; // Cooking cape never burns
     return Math.max(0, a.burn - skillLevel('cooking') * 0.01 - skillLevel('firemaking') * 0.003);
   }
-  // Rare-drop multiplier: Amulet of Foraging/Skill/Glory boost gem chances.
-  function rareBonus() { return 1 + bonus('amulet', 'rare') + 0.06 * shopLvl('lucky'); }
+  // Rare-drop multiplier: Foraging/Fortune gear + Lucky Charm boost gem chances.
+  function rareBonus() { return 1 + eqSum('rare') + 0.06 * shopLvl('lucky'); }
   // Cooking synergy + Iron Stomach shop upgrade: food heals more.
   function foodHeal(id) { return Math.floor((ITEMS[id].heal || 0) * (1 + 0.005 * skillLevel('cooking') + 0.05 * shopLvl('stomach'))); }
 
@@ -432,7 +473,7 @@
   function shopLvl(id) { return (S.shop && S.shop[id]) || 0; }
   function shopDef(id) { return SHOP.find(s => s.id === id); }
   function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
-  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + bonus('cape', 'gxp'); }
+  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + eqSum('gxp'); }
   function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat(); }
   function combatAccMul() { return 1 + 0.03 * shopLvl('keen'); }
   function coinMul()      { return 1 + 0.06 * shopLvl('magnet'); }
@@ -441,9 +482,9 @@
   /* ── Combat math ─────────────────────────────────────────────── */
   // Max hit grows smoothly with Strength (kept as a float so every level moves
   // it visibly; the damage roll and display use it directly).
-  function playerMaxHit() { return (1 + (skillLevel('strength') + bonus('weapon', 'str') + bonus('amulet', 'str')) * 0.3) * combatDmgMul(); }
-  function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + (bonus('weapon', 'acc') + bonus('amulet', 'acc')) / 48) * combatAccMul(); }
-  function playerDefRoll() { return (skillLevel('defence') + bonus('armor', 'def') + 8); }
+  function playerMaxHit() { return (1 + (skillLevel('strength') + eqSum('str')) * 0.3) * combatDmgMul(); }
+  function playerAtkRoll() { return (skillLevel('attack') + 8) * (1 + eqSum('acc') / 48) * combatAccMul(); }
+  function playerDefRoll() { return (skillLevel('defence') + eqSum('def') + 8); }
   function hitChance(atkRoll, defRoll) { return atkRoll / (atkRoll + defRoll); }
   // Combat XP per kill scales with both HP and defence (difficulty), so tougher
   // monsters give the best XP/sec — not the weakest ones you trivially one-shot.
@@ -512,8 +553,14 @@
     for (const r of a.rare) {
       if (Math.random() < r.chance * rareBonus()) {
         bankAdd(r.item, 1);
-        AchievementSystem.unlock('r_uncut');
-        if (!quiet) Toast.show(itemIcon(r.item), 'Rare find!', 'You found an ' + itemName(r.item) + '!', true);
+        const it = ITEMS[r.item];
+        if (it && it.unique) {
+          AchievementSystem.unlock('r_unique');
+          if (!quiet) Toast.show(it.icon, '★ UNIQUE drop! ★', it.name + ' — equip from the Bank', true);
+        } else {
+          AchievementSystem.unlock('r_uncut');
+          if (!quiet) Toast.show(itemIcon(r.item), 'Rare find!', 'You found an ' + itemName(r.item) + '!', true);
+        }
       }
     }
   }
@@ -543,7 +590,8 @@
         const q = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
         bankAdd(d.item, q);
         const it = ITEMS[d.item];
-        Toast.show(it.icon, 'Rare drop!', `${q}× ${it.name}`, true);
+        if (it.unique) { AchievementSystem.unlock('r_unique'); Toast.show(it.icon, '★ UNIQUE drop! ★', it.name + ' — equip from the Bank', true); }
+        else Toast.show(it.icon, 'Rare drop!', `${q}× ${it.name}`, true);
         if (it.type === 'gear') maybeAutoEquip(d.item);
       }
     });
@@ -624,7 +672,8 @@
 
   /* ── Slayer tasks ────────────────────────────────────────────── */
   function completeSlayerTask(m) {
-    const pts = 1 + Math.floor(combatLevel() / 8);
+    // Base points + Slayer cape perk (+1) + Slayer's Helm perk (+slayerPts)
+    const pts = 1 + Math.floor(combatLevel() / 8) + (capeHelps('slayer') ? 1 : 0) + eqSum('slayerPts');
     const bonus = Math.round(m.coins[1] * S.slayer.total * 0.5);
     S.slayer.points = (S.slayer.points || 0) + pts;
     S.slayer.done = (S.slayer.done || 0) + 1;
@@ -681,7 +730,8 @@
   /* ── Equipment actions ───────────────────────────────────────── */
   function maybeAutoEquip(id) {
     const it = ITEMS[id]; if (!it || it.type !== 'gear') return;
-    if (it.slot === 'amulet' || it.slot === 'cape') return; // build choices — equip manually
+    // Build-choice slots and unique drops are never auto-equipped — your call.
+    if (it.unique || it.slot === 'amulet' || it.slot === 'cape' || it.slot === 'ring' || it.slot === 'hat') return;
     const cur = equippedItem(it.slot);
     if (!cur || (it.tier || 0) > (cur.tier || 0)) S.equip[it.slot] = id;
   }
@@ -735,6 +785,7 @@
     AchievementSystem.register('r_gem',     '💍','Lapidary',        'Cut a gem.',                   'Find then cut a gem');
     AchievementSystem.register('r_amulet',  '📿','Jeweller',        'Craft an amulet.',             'Cut a gem, then craft');
     AchievementSystem.register('r_glory',   '🏵️','For Glory',        'Craft the Amulet of Glory.',   'Needs a Dragonstone');
+    AchievementSystem.register('r_unique',  '🌟','One of a Kind',    'Find a unique super-rare item.', 'Fight & gather a LOT — odds are tiny');
     AchievementSystem.register('r_mastery', '🎯','Master of One',    'Max an action to mastery 50.', 'Repeat one action a lot');
     AchievementSystem.register('r_store',   '🛒','Big Spender',      'Buy a Store upgrade.',         'Sell loot, spend coins');
     AchievementSystem.register('r_slayer',  '💀','Slayer',           'Complete a Slayer task.',      'Take a task, then fight');
@@ -858,7 +909,7 @@
       S = defaultState();
     }
     S.bank  = S.bank || { coins: 25 };
-    S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null, cape: null }, S.equip || {});
+    S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null, cape: null, ring: null, hat: null }, S.equip || {});
     S.mastery = S.mastery || {};
     S.shop = S.shop || {};
     S.slayer = Object.assign({ task: null, left: 0, total: 0, points: 0, done: 0, rewards: {} }, S.slayer || {});
@@ -1014,6 +1065,17 @@
   if (!TRAINABLE.some(s => s.id === selectedSkill)) selectedSkill = 'woodcutting';
   window.IdleRealm_pickSkill = function(id) { selectedSkill = id; localStorage.setItem('rl_skill', id); renderSkillsTab(); };
 
+  // Sub-grouping for the (long) Smithing action list; null = no subheader.
+  function actionGroup(a) {
+    if (a.skill !== 'smithing') return null;
+    if (a.id.startsWith('sm_')) return 'Smelt Bars';
+    if (a.id.startsWith('fg_weapon')) return 'Forge Weapons';
+    if (a.id.startsWith('fg_armor')) return 'Forge Armour';
+    if (a.id.startsWith('fg_tool')) return 'Forge Tools';
+    if (a.id.startsWith('cut_')) return 'Cut Gems';
+    if (a.id.startsWith('amu_')) return 'Craft Amulets';
+    return null;
+  }
   function renderSkillsTab() {
     const list = document.getElementById('rl-content');
     if (!list || activeTab !== 'skills') return;
@@ -1029,7 +1091,10 @@
     html += '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
     html += `<div class="menu-section-title" style="padding:2px 2px">${s.icon} ${s.name} <span style="color:var(--text2);font-weight:400">Lv.${b.lvl}${b.lvl < MAX_LEVEL ? ` · ${Fmt.format(b.xp)}/${Fmt.format(b.next)} xp` : ' · MAX'}</span>
       <div class="progress-bar" style="height:4px;margin-top:3px"><div class="progress-fill" style="width:${b.pct}%;background:var(--accent)"></div></div></div>`;
+    let lastGroup = null;
     ACTIONS.filter(a => a.skill === s.id).forEach(a => {
+      const g = actionGroup(a);                       // subheaders (Smithing only)
+      if (g && g !== lastGroup) { lastGroup = g; html += `<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;padding:6px 2px 0">${g}</div>`; }
       const locked = skillLevel(s.id) < a.lvl;
       const active = S.action && S.action.type === 'skill' && S.action.id === a.id;
       const inputTxt = a.inputs ? Object.keys(a.inputs).map(k => `${a.inputs[k]}× ${itemIcon(k)}(${Fmt.format(bankCount(k))})`).join(' ') + ' → ' : '';
@@ -1140,8 +1205,22 @@
     const list = document.getElementById('rl-content');
     if (!list || activeTab !== 'bank') return;
     const ids = Object.keys(S.bank).filter(id => bankCount(id) > 0);
-    const order = { currency: 0, gear: 1, food: 2, bar: 3, ore: 4, log: 5, raw: 6, treasure: 7 };
-    ids.sort((a, b) => (order[(ITEMS[a] || {}).type] ?? 9) - (order[(ITEMS[b] || {}).type] ?? 9));
+    // Sort: gear first (equipped, then unique, then highest tier — best on top),
+    // then coins, food, gems, materials.
+    const order = { gear: 0, currency: 1, food: 2, gem: 3, uncut: 4, bar: 5, ore: 6, log: 7, raw: 8, treasure: 9 };
+    const isEq = id => Object.values(S.equip).indexOf(id) >= 0;
+    ids.sort((a, b) => {
+      const A = ITEMS[a] || {}, B = ITEMS[b] || {};
+      const ta = order[A.type] ?? 10, tb = order[B.type] ?? 10;
+      if (ta !== tb) return ta - tb;
+      if (A.type === 'gear') {
+        if (isEq(a) !== isEq(b)) return isEq(a) ? -1 : 1;
+        if (!!A.unique !== !!B.unique) return A.unique ? -1 : 1;
+        if ((B.tier || 0) !== (A.tier || 0)) return (B.tier || 0) - (A.tier || 0);
+        return (A.slot || '').localeCompare(B.slot || '');
+      }
+      return (B.value || 0) - (A.value || 0);
+    });
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
     const slotsFull = bankSlotsUsed() >= bankSlotsMax();
     html += `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text2)">
@@ -1159,11 +1238,9 @@
       const nSell = sellAmt === 'all' ? have : Math.min(parseInt(sellAmt), have);
       let sub = '';
       if (isGear) {
-        if (it.slot === 'weapon') sub = `+${it.acc} acc / +${it.str} str`;
-        else if (it.slot === 'armor') sub = `+${it.def} def`;
-        else if (it.slot === 'tool') sub = `+${Math.round(it.speed * 100)}% gather`;
-        else if (it.slot === 'cape') sub = `+${Math.round((it.gxp||0)*100)}% XP` + (it.perkSkill === 'all' ? ' + all perks' : ` + ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
-        else if (it.slot === 'amulet') sub = [it.acc?`+${it.acc} acc`:'', it.str?`+${it.str} str`:'', it.gspeed?`+${Math.round(it.gspeed*100)}% gather`:'', it.rare?`+${Math.round(it.rare*100)}% rare drops`:''].filter(Boolean).join(', ');
+        if (it.slot === 'cape') sub = `+${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' + all perks' : ` + ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
+        else sub = gearDesc(it);
+        if (it.unique) sub = '★ ' + sub;
       }
       else if (it.type === 'food') sub = `heals ${foodHeal(id)}`;
       else if (id !== 'coins') sub = `${it.value || 1} ea`;
@@ -1184,11 +1261,11 @@
   // Short human description of what an item does / is for.
   function itemEffect(id) {
     const it = ITEMS[id]; if (!it) return '';
-    if (it.slot === 'weapon') return `Weapon · +${it.acc} accuracy, +${it.str} strength`;
-    if (it.slot === 'armor')  return `Armor · +${it.def} defence`;
-    if (it.slot === 'tool')   return `Tool · +${Math.round(it.speed * 100)}% gathering speed`;
-    if (it.slot === 'amulet') return 'Amulet · ' + [it.acc ? `+${it.acc} acc` : '', it.str ? `+${it.str} str` : '', it.gspeed ? `+${Math.round(it.gspeed * 100)}% gather` : '', it.rare ? `+${Math.round(it.rare * 100)}% rare drops` : ''].filter(Boolean).join(', ');
     if (it.slot === 'cape')   return `Cape · +${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' + all perks' : ` + ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
+    if (it.type === 'gear') {
+      const slotName = { weapon:'Weapon', armor:'Armor', tool:'Tool', amulet:'Amulet', ring:'Ring', hat:'Hat' }[it.slot] || 'Gear';
+      return (it.unique ? '★ Unique ' : '') + slotName + ' · ' + gearDesc(it) + (it.trait ? ` — ${it.trait}` : '');
+    }
     if (it.type === 'food')   return `Food · heals ${it.heal} (more with Cooking)`;
     if (it.type === 'log')    return 'Logs · burn for Firemaking XP';
     if (it.type === 'raw')    return 'Raw fish · cook into food';
@@ -1207,6 +1284,8 @@
       ['Armor',   id => ITEMS[id].slot === 'armor'],
       ['Tools',   id => ITEMS[id].slot === 'tool'],
       ['Amulets', id => ITEMS[id].slot === 'amulet'],
+      ['Rings',   id => ITEMS[id].slot === 'ring'],
+      ['Hats',    id => ITEMS[id].slot === 'hat'],
       ['Capes',   id => ITEMS[id].slot === 'cape'],
       ['Food',    id => ITEMS[id].type === 'food'],
       ['Raw fish',id => ITEMS[id].type === 'raw'],
@@ -1275,15 +1354,13 @@
       const it = equippedItem(sl);
       let eff = '<span class="text-muted">— empty —</span>';
       if (it) {
-        if (sl === 'weapon') eff = `+${it.acc} acc · +${it.str} str`;
-        else if (sl === 'armor') eff = `+${it.def} def`;
-        else if (sl === 'tool') eff = `+${Math.round(it.speed * 100)}% gather`;
-        else if (sl === 'amulet') eff = [it.acc ? `+${it.acc} acc` : '', it.str ? `+${it.str} str` : '', it.gspeed ? `+${Math.round(it.gspeed * 100)}% gather` : '', it.rare ? `+${Math.round(it.rare * 100)}% rare` : ''].filter(Boolean).join(' · ');
-        else if (sl === 'cape') eff = `+${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' · all perks' : ` · ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
+        eff = (sl === 'cape')
+          ? `+${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' · all perks' : ` · ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`)
+          : gearDesc(it);
       }
       return `<div class="stat-row"><span>${it ? it.icon : '▫️'} <span class="text-muted">${label}</span> ${it ? it.name : ''}</span><span style="font-size:12px;color:var(--text2);text-align:right">${eff}</span></div>`;
     };
-    html += card('🛡️ Equipment', ['weapon', 'armor', 'tool', 'amulet', 'cape'].map(sl => slotRow(sl, sl[0].toUpperCase() + sl.slice(1))).join(''));
+    html += card('🛡️ Equipment', ['weapon', 'armor', 'hat', 'tool', 'amulet', 'ring', 'cape'].map(sl => slotRow(sl, sl[0].toUpperCase() + sl.slice(1))).join(''));
 
     // ── All skills ──
     let skillsHtml = '';
