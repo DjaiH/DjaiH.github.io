@@ -339,6 +339,12 @@
     }
   }
 
+  // Safety net: grant capes for any skill already at 99 but missing its cape
+  // (covers reaching 99 via offline progress, which bypasses addXp/grantCape).
+  function reconcileCapes() {
+    SKILLS.forEach(s => { if (skillLevel(s.id) >= MAX_LEVEL) grantCape(s.id); });
+  }
+
   /* ── Bank helpers ────────────────────────────────────────────── */
   // Bag space limits how many distinct *material* stacks you can hold
   // (gear/gems/amulets/capes never count and are never blocked). When full,
@@ -1415,6 +1421,7 @@
       loadGame();
       buildUI();
       registerAchievements();
+      reconcileCapes();   // grant any cape for a skill already at 99 (e.g. reached offline)
       syncTabButtons();
       checkAchievements();
       renderAll();
