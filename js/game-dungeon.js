@@ -743,8 +743,14 @@
   }
   function assignSlayerTask() {
     const cb = combatLevel();
-    const pool = MONSTERS.filter(m => m.reqCb <= cb);
+    let pool = MONSTERS.filter(m => m.reqCb <= cb);
     if (!pool.length) return;
+    // Only task monsters you can actually kill at a reasonable pace (≤45s each),
+    // based on your real DPS/gear — so the assigned target engages instead of
+    // stalling on a high-defence wall.
+    const killable = pool.filter(m => { const d = playerDps(m); return d > 0 && m.hp / d <= 45; });
+    if (killable.length) pool = killable;
+    else pool = [pool.reduce((a, b) => (b.hp / Math.max(0.01, playerDps(b)) < a.hp / Math.max(0.01, playerDps(a)) ? b : a))];
     const m = pool[Math.floor(Math.random() * pool.length)];
     const total = 15 + Math.floor(cb / 2) + Math.floor(Math.random() * 11);
     S.slayer.task = m.id; S.slayer.left = total; S.slayer.total = total;
