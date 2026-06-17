@@ -1,10 +1,10 @@
 /* Service worker — caches the app shell so it runs fully offline after the first visit.
    Bump CACHE when you change index.html so clients pick up the new version. */
-const CACHE = 'mini-game-hub-v23';
+const CACHE = 'mini-game-hub-v24';
 const ASSETS = [
   './', './index.html', './manifest.json', './icon.svg',
   './css/styles.css',
-  './js/core.js', './js/game-clicker.js', './js/game-dungeon.js', './js/sw-register.js',
+  './js/core.js', './js/game-clicker.js', './js/game-dungeon.js', './js/game-puzzle.js', './js/sw-register.js',
 ];
 
 self.addEventListener('install', (e) => {
