@@ -965,7 +965,11 @@
         const m = MONSTER[d.action.id];
         if (m) {
           const dps = playerDps(m);
-          const ttk = Math.max(1, m.hp / Math.max(0.01, dps));
+          // Realistic kill time: ceil(hits) × attack interval (matches live; was
+          // over-crediting by flooring at 1s, which blasted through Slayer tasks).
+          const hc = hitChance(playerAtkRoll(), m.def + 8);
+          const avgDmg = (playerMaxHit() / 2) * Math.max(0.01, hc);
+          const ttk = Math.max(PATK_INT, Math.ceil(m.hp / avgDmg) * PATK_INT);
           let kills = Math.floor(elapsed / ttk);
           // sustain: cap by food healing vs damage taken
           const dmgPerSec = (m.maxHit / 2) * hitChance(m.acc + 8, playerDefRoll()) / m.interval;
@@ -980,14 +984,28 @@
             const coins = Math.round((m.coins[0] + m.coins[1]) / 2 * kills * coinMul());
             bankAdd('coins', coins);
             (m.drops || []).forEach(dr => { const got = Math.floor(kills * dr.chance + Math.random()); if (got > 0) bankAdd(dr.item, got * (((dr.min + dr.max) >> 1) || 1)); });
-            // Slayer task progress (was previously skipped offline)
+            // Slayer: consume kills into the task, completing as many as the kills
+            // allow (points each) and leaving the LAST task partly done — on the
+            // SAME monster (no random offline switch), so progress is preserved.
             let slayerNote = '';
             if (d.slayer && d.slayer.task === m.id && d.slayer.left > 0) {
-              const taskKills = Math.min(kills, d.slayer.left);
-              d.skillsXp.slayer = (d.skillsXp.slayer || 0) + Math.round(mx * 0.8 * taskKills * gxp);
-              d.slayer.left -= taskKills;
-              slayerNote = ` · 💀 ${Fmt.format(taskKills)} task kills`;
-              if (d.slayer.left <= 0) { completeSlayerTask(m); slayerNote = ' · 💀 task complete'; }
+              const cb = combatLevel(); let rem = kills, tasksDone = 0, slayXp = 0;
+              while (rem > 0 && d.slayer.left > 0) {
+                const take = Math.min(rem, d.slayer.left);
+                slayXp += Math.round(mx * 0.8 * take * gxp);
+                d.slayer.left -= take; rem -= take;
+                if (d.slayer.left <= 0) {
+                  tasksDone++;
+                  d.slayer.points = (d.slayer.points || 0) + 1 + Math.floor(cb / 8) + (capeHelps('slayer') ? 1 : 0) + eqSum('slayerPts');
+                  d.slayer.done = (d.slayer.done || 0) + 1;
+                  bankAdd('coins', Math.round(m.coins[1] * d.slayer.total * 0.5));
+                  if (slayerLvlOf('sl_auto') && rem > 0) { const t2 = 15 + Math.floor(cb / 2) + Math.floor(Math.random() * 11); d.slayer.task = m.id; d.slayer.left = t2; d.slayer.total = t2; }
+                  else { if (!slayerLvlOf('sl_auto')) { d.slayer.task = null; d.slayer.left = 0; } break; }
+                }
+              }
+              d.skillsXp.slayer = (d.skillsXp.slayer || 0) + slayXp;
+              if (tasksDone) { AchievementSystem.unlock('r_slayer'); if (d.slayer.done >= 50) AchievementSystem.unlock('r_slayer50'); }
+              slayerNote = tasksDone ? ` · 💀 ${tasksDone} task${tasksDone > 1 ? 's' : ''} done` : (kills ? ` · 💀 ${Fmt.format(Math.min(kills, d.slayer.total))} task kills` : '');
             }
             // consume the food that was used (cheapest first)
             let need = Math.max(0, dmgPerSec * Math.min(elapsed, kills * ttk) - maxHp());
