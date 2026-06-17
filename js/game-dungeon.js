@@ -97,6 +97,13 @@
     ring_ruby:     { name:'Ruby Ring',        icon:'💍', type:'gear', slot:'ring', tier:2, str:8,  value:500 },
     ring_emerald:  { name:'Emerald Ring',     icon:'💍', type:'gear', slot:'ring', tier:2, gspeed:0.08, rare:0.3, value:500 },
     ring_diamond:  { name:'Diamond Ring',     icon:'💍', type:'gear', slot:'ring', tier:3, acc:10, str:10, value:1200 },
+    ring_wealth:   { name:'Ring of Wealth',    icon:'💍', type:'gear', slot:'ring', tier:3, coin:0.25, rare:0.4, value:2500 },
+    ring_dragon:   { name:'Dragonstone Ring',  icon:'💍', type:'gear', slot:'ring', tier:4, acc:18, str:18, gxp:0.04, value:9000 },
+    // Crafted gloves (Crafting skill) — a new 🧤 gloves equip slot
+    gloves_keen:   { name:'Keen Gloves',     icon:'🧤', type:'gear', slot:'gloves', tier:1, acc:10, value:400 },
+    gloves_power:  { name:'Power Gloves',    icon:'🧤', type:'gear', slot:'gloves', tier:1, str:10, value:400 },
+    gloves_swift:  { name:'Swift Gloves',    icon:'🧤', type:'gear', slot:'gloves', tier:2, gspeed:0.10, rare:0.2, value:800 },
+    gloves_master: { name:'Master Gloves',   icon:'🧤', type:'gear', slot:'gloves', tier:3, acc:12, str:12, gspeed:0.05, value:2200 },
     // gear (slot weapon/armor/tool) — 6 metal tiers
     weapon_bronze: { name:'Bronze Sword',     icon:'🗡️', type:'gear', slot:'weapon', tier:1, acc:6,  str:6,  value:40 },
     weapon_iron:   { name:'Iron Sword',       icon:'🗡️', type:'gear', slot:'weapon', tier:2, acc:12, str:11, value:120 },
@@ -140,6 +147,7 @@
     // Rings (new slot)
     ring_power:   { name:'Ring of Power',    icon:'💍', type:'gear', slot:'ring', unique:true, tier:1, acc:30, str:30, value:40000, trait:'Raw combat might' },
     ring_fortune: { name:'Ring of Fortune',  icon:'💍', type:'gear', slot:'ring', unique:true, tier:2, rare:1.0, gspeed:0.10, value:60000, trait:'+100% rare-drop chance, +10% gathering' },
+    ring_thief:   { name:'Ring of the Thief', icon:'💍', type:'gear', slot:'ring', unique:true, tier:3, coin:0.5, rare:0.5, value:70000, trait:'+50% coins, +50% rare-drop chance' },
     ring_scholar: { name:'Ring of the Scholar', icon:'💍', type:'gear', slot:'ring', unique:true, tier:2, gxp:0.07, value:60000, trait:'+7% XP from everything' },
     // Hats (new slot)
     hat_slayer:   { name:"Slayer's Helm",    icon:'🪖', type:'gear', slot:'hat', unique:true, tier:2, acc:18, str:18, def:20, slayerPts:2, value:50000, trait:'+2 Slayer points per task' },
@@ -260,6 +268,12 @@
     { id:'cr_ring_ruby',     skill:'crafting', name:'Craft Ruby Ring',     icon:'💍', lvl:40, xp:90,  time:3.8, inputs:{ bar_gold:1, ruby:1 },     output:'ring_ruby' },
     { id:'cr_ring_emerald',  skill:'crafting', name:'Craft Emerald Ring',  icon:'💍', lvl:30, xp:75,  time:3.6, inputs:{ bar_gold:1, emerald:1 },  output:'ring_emerald' },
     { id:'cr_ring_diamond',  skill:'crafting', name:'Craft Diamond Ring',  icon:'💍', lvl:55, xp:140, time:4.4, inputs:{ bar_gold:1, diamond:1 },  output:'ring_diamond' },
+    { id:'cr_ring_wealth',   skill:'crafting', name:'Craft Ring of Wealth', icon:'💍', lvl:50, xp:160, time:4.6, inputs:{ bar_gold:2, diamond:1 }, output:'ring_wealth' },
+    { id:'cr_ring_dragon',   skill:'crafting', name:'Craft Dragonstone Ring',icon:'💍', lvl:70, xp:400, time:5.4, inputs:{ bar_gold:1, gem_dragon:1 }, output:'ring_dragon' },
+    { id:'cr_gloves_keen',   skill:'crafting', name:'Craft Keen Gloves',   icon:'🧤', lvl:12, xp:45,  time:3.4, inputs:{ bar_gold:1, sapphire:1 }, output:'gloves_keen' },
+    { id:'cr_gloves_power',  skill:'crafting', name:'Craft Power Gloves',  icon:'🧤', lvl:18, xp:55,  time:3.6, inputs:{ bar_gold:1, ruby:1 },     output:'gloves_power' },
+    { id:'cr_gloves_swift',  skill:'crafting', name:'Craft Swift Gloves',  icon:'🧤', lvl:28, xp:80,  time:3.8, inputs:{ bar_gold:1, emerald:1 },  output:'gloves_swift' },
+    { id:'cr_gloves_master', skill:'crafting', name:'Craft Master Gloves', icon:'🧤', lvl:60, xp:200, time:4.8, inputs:{ bar_gold:2, diamond:1 },  output:'gloves_master' },
     // Smithing — cut gems
     { id:'cut_sapphire', skill:'smithing', name:'Cut Sapphire', icon:'🔹', lvl:20, xp:50,  time:3.0, inputs:{ usapphire:1 }, output:'sapphire' },
     { id:'cut_emerald',  skill:'smithing', name:'Cut Emerald',  icon:'🟢', lvl:27, xp:67,  time:3.2, inputs:{ uemerald:1 },  output:'emerald' },
@@ -290,7 +304,8 @@
   // Ultra-rare unique drops from specific gathering actions (chance < 0.01%)
   [['mn_runite', 'ring_fortune', 0.00006], ['wc_magic', 'ring_scholar', 0.00007],
    ['wc_magic', 'hat_wisdom', 0.00004], ['fs_shark', 'hat_anglers', 0.00009],
-   ['mn_runite', 'hat_wisdom', 0.00003]]
+   ['mn_runite', 'hat_wisdom', 0.00003],
+   ['th_vault', 'ring_thief', 0.00006], ['th_heist', 'ring_thief', 0.00009]]
     .forEach(([id, item, chance]) => { if (ACTION[id]) (ACTION[id].rare = ACTION[id].rare || []).push({ item, chance }); });
 
   /* ── Monsters (combat). reqCb gates by combat level. 6 zones. ─── */
@@ -346,7 +361,7 @@
       schema:      'realm',          // marker: distinguishes the reworked save
       skillsXp,
       bank:        { coins: 25 },
-      equip:       { weapon: null, armor: null, tool: null, amulet: null, cape: null, ring: null, hat: null },
+      equip:       { weapon: null, armor: null, tool: null, amulet: null, cape: null, ring: null, hat: null, gloves: null },
       action:      null,             // { type:'skill', id } | { type:'combat', id }
       combatStyle: 'attack',         // attack | strength | defence (Accurate/Aggressive/Defensive)
       mastery:     {},               // actionId -> mastery xp (per-action progression)
@@ -442,6 +457,7 @@
     if (it.rare) p.push(`+${Math.round(it.rare * 100)}% rare`);
     if (it.gxp) p.push(`+${Math.round(it.gxp * 100)}% XP`);
     if (it.slayerPts) p.push(`+${it.slayerPts} slayer pts`);
+    if (it.coin) p.push(`+${Math.round(it.coin * 100)}% coins`);
     return p.join(' · ');
   }
   function toolSpeed()        { return eqSum('speed') + eqSum('gspeed'); }
@@ -508,7 +524,7 @@
   function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + eqSum('gxp') + 0.03 * shopLvl('enigma'); }
   function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat(); }
   function combatAccMul() { return 1 + 0.03 * shopLvl('keen'); }
-  function coinMul()      { return 1 + 0.06 * shopLvl('magnet'); }
+  function coinMul()      { return 1 + 0.06 * shopLvl('magnet') + eqSum('coin'); }
   function offlineCap()   { return OFFLINE_CAP + shopLvl('charm') * 7200; }
 
   /* ── Combat math ─────────────────────────────────────────────── */
@@ -763,7 +779,7 @@
   function maybeAutoEquip(id) {
     const it = ITEMS[id]; if (!it || it.type !== 'gear') return;
     // Build-choice slots and unique drops are never auto-equipped — your call.
-    if (it.unique || it.slot === 'amulet' || it.slot === 'cape' || it.slot === 'ring' || it.slot === 'hat') return;
+    if (it.unique || it.slot === 'amulet' || it.slot === 'cape' || it.slot === 'ring' || it.slot === 'hat' || it.slot === 'gloves') return;
     if (it.req && skillLevel(it.reqSkill) < it.req) return;   // can't wear above your level
     const cur = equippedItem(it.slot);
     if (!cur || (it.tier || 0) > (cur.tier || 0)) S.equip[it.slot] = id;
@@ -817,6 +833,52 @@
     renderStoreTab(); renderActiveHeader();
   };
 
+  /* ── Loot Crates — an infinite coin sink that yields crafting mats,
+        gems and (rarely) unique gear. Gives coins (and Thieving) purpose. ── */
+  const CRATES = [
+    { id:'small', name:'Small Crate', icon:'🎁', cost:1000 },
+    { id:'big',   name:'Big Crate',   icon:'📦', cost:12000 },
+    { id:'lucky', name:'Lucky Crate', icon:'💎', cost:120000 },
+  ];
+  function crateReward(tier) {
+    const out = {}, add = (id, q) => { out[id] = (out[id] || 0) + q; };
+    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+    if (tier === 'small') {
+      add(pick(['ore_copper','ore_tin','ore_iron','ore_coal','log_oak','log_willow','fish_trout','fish_salmon']), 15 + Math.floor(Math.random() * 20));
+      if (Math.random() < 0.30) add(pick(['sapphire','emerald']), 1);
+      if (Math.random() < 0.05) add(pick(['usapphire','uemerald','uruby']), 1);
+    } else if (tier === 'big') {
+      add(pick(['ore_mithril','ore_coal','ore_gold','bar_steel','bar_mithril']), 20 + Math.floor(Math.random() * 30));
+      if (Math.random() < 0.7) add(pick(['ruby','emerald','sapphire']), 1 + Math.floor(Math.random() * 2));
+      if (Math.random() < 0.25) add('diamond', 1);
+      if (Math.random() < 0.10) add('gem_dragon', 1);
+    } else { // lucky
+      add('diamond', 2 + Math.floor(Math.random() * 3));
+      add(pick(['bar_mithril','bar_rune']), 20 + Math.floor(Math.random() * 40));
+      if (Math.random() < 0.6) add('gem_dragon', 1);
+      if (Math.random() < 0.08) add(pick(['ring_power','ring_fortune','ring_scholar','ring_thief','hat_slayer','hat_wisdom']), 1);
+    }
+    return out;
+  }
+  window.IdleRealm_openCrate = function(tier) {
+    const def = CRATES.find(c => c.id === tier); if (!def) return;
+    if (bankCount('coins') < def.cost) { Toast.show('🪙', 'Not enough coins', `Need ${Fmt.format(def.cost)} coins`); return; }
+    bankRemove('coins', def.cost);
+    const rewards = crateReward(tier);
+    const parts = [];
+    let gotUnique = false;
+    Object.keys(rewards).forEach(id => {
+      bankAdd(id, rewards[id]);
+      const it = ITEMS[id];
+      if (it && it.unique) { gotUnique = true; AchievementSystem.unlock('r_unique'); }
+      parts.push(`${itemIcon(id)} ${rewards[id]}× ${itemName(id)}`);
+    });
+    AchievementSystem.unlock('r_crate');
+    Haptics.vibrate(gotUnique ? [60, 40, 90] : 40);
+    Toast.show(gotUnique ? '★' : def.icon, gotUnique ? '★ UNIQUE in the crate! ★' : def.name + ' opened', parts.join(' · '), gotUnique);
+    renderStoreTab(); renderTopbar();
+  };
+
   /* ── Achievements ────────────────────────────────────────────── */
   function registerAchievements() {
     AchievementSystem.register('r_first',   '🪵','First Harvest',   'Gather your first resource.',  'Start a gathering skill');
@@ -835,6 +897,7 @@
     AchievementSystem.register('r_amulet',  '📿','Jeweller',        'Craft an amulet.',             'Cut a gem, then craft');
     AchievementSystem.register('r_glory',   '🏵️','For Glory',        'Craft the Amulet of Glory.',   'Needs a Dragonstone');
     AchievementSystem.register('r_unique',  '🌟','One of a Kind',    'Find a unique super-rare item.', 'Fight & gather a LOT — odds are tiny');
+    AchievementSystem.register('r_crate',   '🎁','Gambler',          'Open a loot crate.',           'Earn coins, then buy a crate in the Store');
     AchievementSystem.register('r_mastery', '🎯','Master of One',    'Max an action to mastery 50.', 'Repeat one action a lot');
     AchievementSystem.register('r_store',   '🛒','Big Spender',      'Buy a Store upgrade.',         'Sell loot, spend coins');
     AchievementSystem.register('r_slayer',  '💀','Slayer',           'Complete a Slayer task.',      'Take a task, then fight');
@@ -958,7 +1021,7 @@
       S = defaultState();
     }
     S.bank  = S.bank || { coins: 25 };
-    S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null, cape: null, ring: null, hat: null }, S.equip || {});
+    S.equip = Object.assign({ weapon: null, armor: null, tool: null, amulet: null, cape: null, ring: null, hat: null, gloves: null }, S.equip || {});
     S.mastery = S.mastery || {};
     S.shop = S.shop || {};
     S.slayer = Object.assign({ task: null, left: 0, total: 0, points: 0, done: 0, rewards: {} }, S.slayer || {});
@@ -1116,13 +1179,18 @@
 
   // Sub-grouping for the (long) Smithing action list; null = no subheader.
   function actionGroup(a) {
-    if (a.skill !== 'smithing') return null;
-    if (a.id.startsWith('sm_')) return 'Smelt Bars';
-    if (a.id.startsWith('fg_weapon')) return 'Forge Weapons';
-    if (a.id.startsWith('fg_armor')) return 'Forge Armour';
-    if (a.id.startsWith('fg_tool')) return 'Forge Tools';
-    if (a.id.startsWith('cut_')) return 'Cut Gems';
-    if (a.id.startsWith('amu_')) return 'Craft Amulets';
+    if (a.skill === 'smithing') {
+      if (a.id.startsWith('sm_')) return 'Smelt Bars';
+      if (a.id.startsWith('fg_weapon')) return 'Forge Weapons';
+      if (a.id.startsWith('fg_armor')) return 'Forge Armour';
+      if (a.id.startsWith('fg_tool')) return 'Forge Tools';
+      if (a.id.startsWith('cut_')) return 'Cut Gems';
+      if (a.id.startsWith('amu_')) return 'Craft Amulets';
+    }
+    if (a.skill === 'crafting') {
+      if (a.id.startsWith('cr_ring')) return 'Rings';
+      if (a.id.startsWith('cr_gloves')) return 'Gloves';
+    }
     return null;
   }
   function renderSkillsTab() {
@@ -1314,7 +1382,7 @@
     const it = ITEMS[id]; if (!it) return '';
     if (it.slot === 'cape')   return `Cape · +${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' + all perks' : ` + ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
     if (it.type === 'gear') {
-      const slotName = { weapon:'Weapon', armor:'Armor', tool:'Tool', amulet:'Amulet', ring:'Ring', hat:'Hat' }[it.slot] || 'Gear';
+      const slotName = { weapon:'Weapon', armor:'Armor', tool:'Tool', amulet:'Amulet', ring:'Ring', hat:'Hat', gloves:'Gloves' }[it.slot] || 'Gear';
       const reqT = it.req ? ` · needs ${SKILL[it.reqSkill].name} ${it.req}` : '';
       return (it.unique ? '★ Unique ' : '') + slotName + ' · ' + gearDesc(it) + reqT + (it.trait ? ` — ${it.trait}` : '');
     }
@@ -1412,7 +1480,7 @@
       }
       return `<div class="stat-row"><span>${it ? it.icon : '▫️'} <span class="text-muted">${label}</span> ${it ? it.name : ''}</span><span style="font-size:12px;color:var(--text2);text-align:right">${eff}</span></div>`;
     };
-    html += card('🛡️ Equipment', ['weapon', 'armor', 'hat', 'tool', 'amulet', 'ring', 'cape'].map(sl => slotRow(sl, sl[0].toUpperCase() + sl.slice(1))).join(''));
+    html += card('🛡️ Equipment', ['weapon', 'armor', 'hat', 'gloves', 'tool', 'amulet', 'ring', 'cape'].map(sl => slotRow(sl, sl[0].toUpperCase() + sl.slice(1))).join(''));
 
     // ── All skills ──
     let skillsHtml = '';
@@ -1443,7 +1511,18 @@
         </div>
         <div class="text-accent" style="font-size:13px;flex-shrink:0">${eMax ? 'MAX' : '✦ ' + eCost}</div>
       </button>`;
-    html += `<div style="font-size:12px;color:var(--text2);margin-top:4px">General Store — spend 🪙 coins on permanent upgrades.</div>`;
+    // 🎁 Loot Crates — infinite coin sink (gems, materials, rare gear)
+    html += `<div style="font-size:12px;color:var(--text2);margin-top:6px">🎁 Loot Crates — gamble 🪙 coins for gems, crafting materials & (rarely) unique gear.</div>`;
+    CRATES.forEach(c => {
+      const aff = bankCount('coins') >= c.cost;
+      html += `<button class="upgrade-item ${aff ? 'can-buy' : 'locked'}" onclick="IdleRealm_openCrate('${c.id}')">
+          <div class="upg-icon">${c.icon}</div>
+          <div class="upg-info"><div class="upg-name">${c.name}</div>
+            <div style="font-size:12px;color:var(--text2)">${c.id === 'lucky' ? 'Diamonds, bars + good unique chance' : c.id === 'big' ? 'Mid materials, gems, dragonstone chance' : 'Basic materials & a gem chance'}</div></div>
+          <div class="text-gold" style="font-size:13px;flex-shrink:0">🪙 ${Fmt.format(c.cost)}</div>
+        </button>`;
+    });
+    html += `<div style="font-size:12px;color:var(--text2);margin-top:6px">General Store — spend 🪙 coins on permanent upgrades.</div>`;
     SHOP.forEach(def => {
       const lvl = shopLvl(def.id);
       const maxed = lvl >= def.max;
