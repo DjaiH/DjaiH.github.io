@@ -214,7 +214,7 @@ const Router = (() => {
   }
 
   function updateMenuMeta() {
-    const games = ['clicker', 'dungeon'];
+    const games = ['clicker', 'dungeon', 'puzzle'];
     games.forEach(g => {
       const meta = document.getElementById('card-meta-' + g);
       if (!meta) return;
@@ -231,6 +231,8 @@ const Router = (() => {
         meta.textContent = 'New game';
       }
     });
+    const sh = document.getElementById('menu-shards');
+    if (sh) sh.textContent = '✦ ' + Fmt.format(Shards.get()) + ' Enigma Shards';
   }
 
   // Register built-in screens
@@ -246,10 +248,23 @@ const Router = (() => {
 })();
 
 /* ════════════════════════════════════════════════════════════════
+   ENIGMA SHARDS — shared cross-game currency (earned in Code Breaker,
+   spent on special upgrades in the other games).
+   ════════════════════════════════════════════════════════════════ */
+const Shards = (() => {
+  let n = parseInt(localStorage.getItem('shards') || '0', 10) || 0;
+  function get() { return n; }
+  function set(v) { n = Math.max(0, Math.floor(v) || 0); localStorage.setItem('shards', String(n)); EventBus.emit('shards', n); }
+  function add(x) { set(n + x); }
+  function spend(x) { if (n < x) return false; set(n - x); return true; }
+  return { get, add, spend, set };
+})();
+
+/* ════════════════════════════════════════════════════════════════
    SAVE SYSTEM
    ════════════════════════════════════════════════════════════════ */
 const SaveSystem = (() => {
-  const GAMES = ['clicker', 'dungeon'];
+  const GAMES = ['clicker', 'dungeon', 'puzzle'];
   const MIGRATIONS = {}; // keyed by game id, value = { v1_to_v2: fn, ... }
 
   function registerMigrations(gameId, migrations) {
@@ -297,6 +312,7 @@ const SaveSystem = (() => {
     });
     const achieveRaw = localStorage.getItem('achievements');
     if (achieveRaw) bundle['_achievements'] = achieveRaw;
+    bundle['_shards'] = String(Shards.get());
 
     const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(bundle))));
     const area = document.getElementById('save-export-area');
@@ -330,6 +346,7 @@ const SaveSystem = (() => {
               if (bundle[g]) localStorage.setItem('save_' + g, bundle[g]);
             });
             if (bundle['_achievements']) localStorage.setItem('achievements', bundle['_achievements']);
+            if (bundle['_shards'] !== undefined) Shards.set(parseInt(bundle['_shards'], 10) || 0);
             Toast.show('✅', 'Import successful', 'Restart each game to load your save.');
             area.value = '';
           } catch (e) {
@@ -349,6 +366,7 @@ const SaveSystem = (() => {
         { label: 'Delete Everything', cls: 'btn-danger', fn: () => {
           GAMES.forEach(g => localStorage.removeItem('save_' + g));
           localStorage.removeItem('achievements');
+          localStorage.removeItem('shards'); Shards.set(0);
           Toast.show('🗑', 'All saves deleted', 'Fresh start!');
         }}
       ]
@@ -437,6 +455,7 @@ const SettingsScreen = (() => {
   const GAMES = [
     { id: 'clicker', icon: '🍪', name: 'Cookie Clicker' },
     { id: 'dungeon', icon: '⚔️', name: 'Idle Realm' },
+    { id: 'puzzle',  icon: '🧩', name: 'Code Breaker' },
   ];
   function render() {
     const list = document.getElementById('settings-list');

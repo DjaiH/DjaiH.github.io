@@ -38,6 +38,8 @@
     { id:'firemaking', name:'Firemaking', icon:'🔥', kind:'produce' },
     { id:'cooking',    name:'Cooking',    icon:'🍳', kind:'produce' },
     { id:'smithing',   name:'Smithing',   icon:'🔨', kind:'produce' },
+    { id:'thieving',   name:'Thieving',   icon:'🗝️', kind:'gather' },
+    { id:'crafting',   name:'Crafting',   icon:'💍', kind:'produce' },
     { id:'slayer',     name:'Slayer',     icon:'💀', kind:'slayer' },
   ];
   const SKILL = Object.fromEntries(SKILLS.map(s => [s.id, s]));
@@ -88,6 +90,13 @@
     bar_mithril: { name:'Mithril Bar',    icon:'🟦', type:'bar',  value:160 },
     bar_adamant: { name:'Adamant Bar',    icon:'🟩', type:'bar',  value:360 },
     bar_rune:    { name:'Rune Bar',       icon:'🟪', type:'bar',  value:800 },
+    bar_gold:    { name:'Gold Bar',       icon:'🟨', type:'bar',  value:90 },
+    // Craftable rings (Crafting skill) — accessible ring-slot gear (no level req)
+    ring_gold:     { name:'Gold Ring',        icon:'💍', type:'gear', slot:'ring', tier:1, gxp:0.02, value:200 },
+    ring_sapphire: { name:'Sapphire Ring',    icon:'💍', type:'gear', slot:'ring', tier:1, acc:8,  value:400 },
+    ring_ruby:     { name:'Ruby Ring',        icon:'💍', type:'gear', slot:'ring', tier:2, str:8,  value:500 },
+    ring_emerald:  { name:'Emerald Ring',     icon:'💍', type:'gear', slot:'ring', tier:2, gspeed:0.08, rare:0.3, value:500 },
+    ring_diamond:  { name:'Diamond Ring',     icon:'💍', type:'gear', slot:'ring', tier:3, acc:10, str:10, value:1200 },
     // gear (slot weapon/armor/tool) — 6 metal tiers
     weapon_bronze: { name:'Bronze Sword',     icon:'🗡️', type:'gear', slot:'weapon', tier:1, acc:6,  str:6,  value:40 },
     weapon_iron:   { name:'Iron Sword',       icon:'🗡️', type:'gear', slot:'weapon', tier:2, acc:12, str:11, value:120 },
@@ -141,6 +150,15 @@
   // XP plus a perk for its own domain; the Max Cape (all 99) gives +10% and all perks.
   SKILLS.forEach((s, i) => { ITEMS['cape_' + s.id] = { name: s.name + ' Cape', icon: '🎽', type: 'gear', slot: 'cape', tier: i + 1, gxp: 0.05, perkSkill: s.id, perkType: s.kind, value: 5000 }; });
   ITEMS['cape_max'] = { name: 'Max Cape', icon: '🧥', type: 'gear', slot: 'cape', tier: 99, gxp: 0.10, perkSkill: 'all', perkType: 'all', value: 50000 };
+  // Level requirements: weapons need Attack; armour & hats need Defence (RS-style).
+  const TIER_REQ = { 1: 1, 2: 10, 3: 20, 4: 30, 5: 40, 6: 50 };
+  Object.keys(ITEMS).forEach(id => {
+    const it = ITEMS[id];
+    if (it.type !== 'gear') return;
+    if (it.slot === 'weapon') { it.reqSkill = 'attack'; it.req = it.unique ? (it.tier >= 8 ? 75 : 60) : (TIER_REQ[it.tier] || 1); }
+    else if (it.slot === 'armor') { it.reqSkill = 'defence'; it.req = it.unique ? 60 : (TIER_REQ[it.tier] || 1); }
+    else if (it.slot === 'hat') { it.reqSkill = 'defence'; it.req = it.unique ? 45 : (TIER_REQ[it.tier] || 1); }
+  });
   function itemName(id) { return (ITEMS[id] || {}).name || id; }
   function itemIcon(id) { return (ITEMS[id] || {}).icon || '❔'; }
 
@@ -229,6 +247,19 @@
     { id:'fg_weapon_rune',   skill:'smithing', name:'Forge Rune Sword',      icon:'⚔️', lvl:85, xp:380, time:6.0, inputs:{ bar_rune:1 },    output:'weapon_rune' },
     { id:'fg_tool_rune',     skill:'smithing', name:'Forge Rune Toolkit',    icon:'🛠️', lvl:87, xp:520, time:6.0, inputs:{ bar_rune:2 },    output:'tool_rune' },
     { id:'fg_armor_rune',    skill:'smithing', name:'Forge Rune Platebody',  icon:'🛡️', lvl:90, xp:700, time:6.4, inputs:{ bar_rune:3 },    output:'armor_rune' },
+    { id:'sm_gold',          skill:'smithing', name:'Smelt Gold',            icon:'🟨', lvl:40, xp:35,  time:4.0, inputs:{ ore_gold:1 },     output:'bar_gold' },
+    // Thieving — pickpocket targets for coins (qty) + rare loot
+    { id:'th_citizen',  skill:'thieving', name:'Pickpocket Citizen', icon:'🧍', lvl:1,  xp:8,   time:2.6, item:'coins', qty:6 },
+    { id:'th_merchant', skill:'thieving', name:'Rob Merchant',       icon:'🧑‍💼', lvl:15, xp:18,  time:3.0, item:'coins', qty:20 },
+    { id:'th_noble',    skill:'thieving', name:'Burgle Noble',       icon:'🤵', lvl:35, xp:36,  time:3.6, item:'coins', qty:55 },
+    { id:'th_vault',    skill:'thieving', name:'Raid the Vault',     icon:'🏦', lvl:55, xp:72,  time:4.4, item:'coins', qty:150 },
+    { id:'th_heist',    skill:'thieving', name:'Master Heist',       icon:'💼', lvl:75, xp:140, time:5.4, item:'coins', qty:420 },
+    // Crafting — gold bars (+ gems) into wearable rings
+    { id:'cr_ring_gold',     skill:'crafting', name:'Craft Gold Ring',     icon:'💍', lvl:1,  xp:30,  time:3.0, inputs:{ bar_gold:1 },              output:'ring_gold' },
+    { id:'cr_ring_sapphire', skill:'crafting', name:'Craft Sapphire Ring', icon:'💍', lvl:20, xp:55,  time:3.4, inputs:{ bar_gold:1, sapphire:1 }, output:'ring_sapphire' },
+    { id:'cr_ring_ruby',     skill:'crafting', name:'Craft Ruby Ring',     icon:'💍', lvl:40, xp:90,  time:3.8, inputs:{ bar_gold:1, ruby:1 },     output:'ring_ruby' },
+    { id:'cr_ring_emerald',  skill:'crafting', name:'Craft Emerald Ring',  icon:'💍', lvl:30, xp:75,  time:3.6, inputs:{ bar_gold:1, emerald:1 },  output:'ring_emerald' },
+    { id:'cr_ring_diamond',  skill:'crafting', name:'Craft Diamond Ring',  icon:'💍', lvl:55, xp:140, time:4.4, inputs:{ bar_gold:1, diamond:1 },  output:'ring_diamond' },
     // Smithing — cut gems
     { id:'cut_sapphire', skill:'smithing', name:'Cut Sapphire', icon:'🔹', lvl:20, xp:50,  time:3.0, inputs:{ usapphire:1 }, output:'sapphire' },
     { id:'cut_emerald',  skill:'smithing', name:'Cut Emerald',  icon:'🟢', lvl:27, xp:67,  time:3.2, inputs:{ uemerald:1 },  output:'emerald' },
@@ -253,7 +284,8 @@
   // and fishing (oysters) yield gems only rarely. Higher tiers roll a bit better.
   [['mn_copper',1],['mn_tin',1],['mn_iron',1.4],['mn_coal',1.8],['mn_gold',3.5],['mn_mithril',2.6],['mn_adamant',3.2],['mn_runite',4.0],
    ['wc_normal',0.4],['wc_oak',0.5],['wc_willow',0.6],['wc_teak',0.65],['wc_maple',0.7],['wc_mahogany',0.8],['wc_yew',0.9],['wc_magic',1.1],
-   ['fs_shrimp',0.4],['fs_sardine',0.45],['fs_trout',0.5],['fs_salmon',0.6],['fs_tuna',0.65],['fs_lobster',0.7],['fs_sword',0.8],['fs_shark',1.0]]
+   ['fs_shrimp',0.4],['fs_sardine',0.45],['fs_trout',0.5],['fs_salmon',0.6],['fs_tuna',0.65],['fs_lobster',0.7],['fs_sword',0.8],['fs_shark',1.0],
+   ['th_citizen',0.5],['th_merchant',0.7],['th_noble',1.0],['th_vault',1.4],['th_heist',2.0]]
     .forEach(([id, mult]) => { if (ACTION[id]) ACTION[id].rare = gemTable(mult); });
   // Ultra-rare unique drops from specific gathering actions (chance < 0.01%)
   [['mn_runite', 'ring_fortune', 0.00006], ['wc_magic', 'ring_scholar', 0.00007],
@@ -473,7 +505,7 @@
   function shopLvl(id) { return (S.shop && S.shop[id]) || 0; }
   function shopDef(id) { return SHOP.find(s => s.id === id); }
   function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
-  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + eqSum('gxp'); }
+  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + eqSum('gxp') + 0.03 * shopLvl('enigma'); }
   function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat(); }
   function combatAccMul() { return 1 + 0.03 * shopLvl('keen'); }
   function coinMul()      { return 1 + 0.06 * shopLvl('magnet'); }
@@ -538,7 +570,7 @@
         if (a.output === 'amulet_glory') AchievementSystem.unlock('r_glory');
       } else { addXp(a.skill, Math.floor(a.xp * 0.3)); Toast.show('💢', 'Burnt!', 'Ruined a ' + itemName(a.output)); }
     } else if (a.item) {
-      bankAdd(a.item, dbl ? 2 : 1); addXp(a.skill, a.xp);
+      bankAdd(a.item, (dbl ? 2 : 1) * (a.qty || 1)); addXp(a.skill, a.xp);
       rollRareDrops(a);
     } else {
       addXp(a.skill, dbl ? Math.round(a.xp * 1.5) : a.xp); // firemaking: no item, so double = bonus xp
@@ -732,11 +764,14 @@
     const it = ITEMS[id]; if (!it || it.type !== 'gear') return;
     // Build-choice slots and unique drops are never auto-equipped — your call.
     if (it.unique || it.slot === 'amulet' || it.slot === 'cape' || it.slot === 'ring' || it.slot === 'hat') return;
+    if (it.req && skillLevel(it.reqSkill) < it.req) return;   // can't wear above your level
     const cur = equippedItem(it.slot);
     if (!cur || (it.tier || 0) > (cur.tier || 0)) S.equip[it.slot] = id;
   }
+  function canEquip(it) { return !it.req || skillLevel(it.reqSkill) >= it.req; }
   window.IdleRealm_equip = function(id) {
     const it = ITEMS[id]; if (!it || it.type !== 'gear' || bankCount(id) < 1) return;
+    if (!canEquip(it)) { Toast.show('🔒', 'Level too low', `Needs ${SKILL[it.reqSkill].name} ${it.req}`); return; }
     S.equip[it.slot] = id;
     Toast.show(it.icon, 'Equipped', it.name);
     Haptics.vibrate(30);
@@ -766,6 +801,20 @@
     Toast.show(def.icon, def.name + ' → Lv.' + (lvl + 1), def.fmt(lvl + 1));
     Haptics.vibrate(40);
     renderStoreTab(); renderTopbar(); renderActiveHeader();
+  };
+  // Special upgrade bought with ✦ Enigma Shards (earned in Code Breaker).
+  const ENIGMA_MAX = 10;
+  function enigmaCost() { return 2 + shopLvl('enigma') * 2; }
+  window.IdleRealm_buyEnigma = function() {
+    const lvl = shopLvl('enigma');
+    if (lvl >= ENIGMA_MAX) return;
+    const cost = enigmaCost();
+    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Code Breaker`); return; }
+    if (!S.shop) S.shop = {};
+    S.shop.enigma = lvl + 1;
+    Toast.show('✦', 'Enigma Focus → Lv.' + (lvl + 1), `+${(lvl + 1) * 3}% XP from everything`);
+    Haptics.vibrate([40, 30, 60]);
+    renderStoreTab(); renderActiveHeader();
   };
 
   /* ── Achievements ────────────────────────────────────────────── */
@@ -835,7 +884,7 @@
               if (a.inputs) { if (!hasInputs(a.inputs)) break; spendInputs(a.inputs); }
               const dbl = Math.random() < masteryDouble(a.id);
               if (a.output) { const burn = a.burn && Math.random() < cookBurnChance(a); if (!burn) { bankAdd(a.output, dbl ? 2 : 1); made++; xp += a.xp; } else xp += Math.floor(a.xp * 0.3); }
-              else if (a.item) { bankAdd(a.item, dbl ? 2 : 1); made++; xp += a.xp; rollRareDrops(a, true); }
+              else if (a.item) { bankAdd(a.item, (dbl ? 2 : 1) * (a.qty || 1)); made++; xp += a.xp; rollRareDrops(a, true); }
               else { xp += dbl ? Math.round(a.xp * 1.5) : a.xp; made++; }
             }
             d.skillsXp[a.skill] = (d.skillsXp[a.skill] || 0) + Math.round(xp * gxp);
@@ -1244,12 +1293,14 @@
       }
       else if (it.type === 'food') sub = `heals ${foodHeal(id)}`;
       else if (id !== 'coins') sub = `${it.value || 1} ea`;
+      const reqLocked = isGear && it.req && skillLevel(it.reqSkill) < it.req;
+      if (reqLocked) sub += ` <span style="color:var(--red)">🔒 ${SKILL[it.reqSkill].name} ${it.req}</span>`;
       html += `<div class="upgrade-item" style="${equipped ? 'border-color:var(--accent)' : ''}">
           <div class="upg-icon">${it.icon}</div>
           <div class="upg-info"><div class="upg-name">${it.name} <span style="color:var(--text2);font-size:12px">×${Fmt.format(bankCount(id))}</span> ${equipped ? '<span class="text-accent" style="font-size:11px">equipped</span>' : ''}</div>
             <div style="font-size:12px;color:var(--text2)">${sub}</div></div>
           <div style="display:flex;gap:4px;flex-shrink:0">
-            ${isGear && !equipped ? `<button class="bld-level can-buy" onclick="IdleRealm_equip('${id}')">Equip</button>` : ''}
+            ${isGear && !equipped ? `<button class="bld-level ${reqLocked ? 'locked' : 'can-buy'}" onclick="IdleRealm_equip('${id}')">Equip</button>` : ''}
             ${id !== 'coins' ? `<button class="bld-level" onclick="IdleRealm_sell('${id}')" style="color:var(--gold)">🪙${Fmt.format((it.value || 1) * nSell)}${sellAmt !== 'all' && have > nSell ? ` ×${nSell}` : ''}</button>` : ''}
           </div>
         </div>`;
@@ -1264,7 +1315,8 @@
     if (it.slot === 'cape')   return `Cape · +${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' + all perks' : ` + ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
     if (it.type === 'gear') {
       const slotName = { weapon:'Weapon', armor:'Armor', tool:'Tool', amulet:'Amulet', ring:'Ring', hat:'Hat' }[it.slot] || 'Gear';
-      return (it.unique ? '★ Unique ' : '') + slotName + ' · ' + gearDesc(it) + (it.trait ? ` — ${it.trait}` : '');
+      const reqT = it.req ? ` · needs ${SKILL[it.reqSkill].name} ${it.req}` : '';
+      return (it.unique ? '★ Unique ' : '') + slotName + ' · ' + gearDesc(it) + reqT + (it.trait ? ` — ${it.trait}` : '');
     }
     if (it.type === 'food')   return `Food · heals ${it.heal} (more with Cooking)`;
     if (it.type === 'log')    return 'Logs · burn for Firemaking XP';
@@ -1380,7 +1432,18 @@
     const list = document.getElementById('rl-content');
     if (!list || activeTab !== 'store') return;
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
-    html += `<div style="font-size:12px;color:var(--text2)">General Store — spend 🪙 coins (from selling loot & monster kills) on permanent upgrades.</div>`;
+    // ✦ Enigma upgrade — bought with shared shards from Code Breaker
+    const eLvl = shopLvl('enigma'), eMax = eLvl >= ENIGMA_MAX, eCost = enigmaCost(), eAff = !eMax && Shards.get() >= eCost;
+    html += `<div style="font-size:12px;color:var(--text2)">✦ Enigma — earned in <b>Code Breaker</b> · you have <b class="text-accent">${Fmt.format(Shards.get())}</b> Shards</div>`;
+    html += `<button class="upgrade-item ${eMax ? '' : (eAff ? 'can-buy' : 'locked')}" ${eMax ? '' : 'onclick="IdleRealm_buyEnigma()"'} style="border-color:var(--accent)">
+        <div class="upg-icon">✦</div>
+        <div class="upg-info">
+          <div class="upg-name">Enigma Focus <span style="color:var(--text2);font-size:12px">Lv.${eLvl}/${ENIGMA_MAX}</span></div>
+          <div style="font-size:12px;color:var(--text2)">+${eLvl * 3}% XP from everything${eMax ? '' : ` <span style="color:var(--green)">→ +${(eLvl + 1) * 3}%</span>`}</div>
+        </div>
+        <div class="text-accent" style="font-size:13px;flex-shrink:0">${eMax ? 'MAX' : '✦ ' + eCost}</div>
+      </button>`;
+    html += `<div style="font-size:12px;color:var(--text2);margin-top:4px">General Store — spend 🪙 coins on permanent upgrades.</div>`;
     SHOP.forEach(def => {
       const lvl = shopLvl(def.id);
       const maxed = lvl >= def.max;

@@ -119,6 +119,7 @@
       cookies:        0,
       totalBaked:     0,
       totalClicks:    0,
+      enigma:         0, // ✦ Enigma Catalyst level (shard-bought CpS multiplier)
       cpc:            1, // cookies per click (base)
       buildings:      Object.fromEntries(BUILDINGS.map(b => [b.id, 0])),
       buildingUpgrades: {}, // id -> [false, false, false]
@@ -223,6 +224,8 @@
     total *= milkBonus(state);
     // Prestige bonus: +2% per heavenly chip
     total *= 1 + state.heavenlyChips * 0.02;
+    // ✦ Enigma Catalyst: +5% CpS per level (bought with shared Enigma Shards)
+    total *= 1 + 0.05 * (state.enigma || 0);
     return total;
   }
 
@@ -409,6 +412,17 @@
     if (!list) return;
     const cps = computeCps(S);
     let html = '';
+
+    // ✦ Enigma Catalyst — special upgrade bought with shared Enigma Shards
+    const eLvl = S.enigma || 0, eMax = eLvl >= 10, eCost = 3 + eLvl * 3, eAff = !eMax && Shards.get() >= eCost;
+    html += `<button class="upgrade-item ${eMax ? '' : (eAff ? '' : 'locked')}" ${eMax ? '' : 'onclick="ClickerGame_buyEnigma()"'} style="border-color:var(--accent)">
+        <div class="upg-icon">✦</div>
+        <div class="upg-info">
+          <div class="upg-name">Enigma Catalyst <span style="color:var(--text2);font-size:12px">Lv.${eLvl}/10</span></div>
+          <div class="upg-cost" style="color:var(--text2)">+${eLvl * 5}% CpS · you have ${Fmt.format(Shards.get())} ✦</div>
+        </div>
+        <div class="upg-effect text-accent">${eMax ? 'MAX' : '✦ ' + eCost}</div>
+      </button>`;
 
     // Click upgrades
     CLICK_UPGRADES.forEach(u => {
@@ -738,6 +752,18 @@
     S.clickUpgrades[id] = true;
     Toast.show('👆', 'Upgrade Purchased', u.name);
     Haptics.vibrate(40);
+  };
+
+  // ✦ Enigma Catalyst — spend shared Enigma Shards (earned in Code Breaker)
+  window.ClickerGame_buyEnigma = function() {
+    const lvl = S.enigma || 0;
+    if (lvl >= 10) return;
+    const cost = 3 + lvl * 3;
+    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Code Breaker`); return; }
+    S.enigma = lvl + 1;
+    Toast.show('✦', 'Enigma Catalyst → Lv.' + (lvl + 1), `+${(lvl + 1) * 5}% cookies per second`);
+    Haptics.vibrate([40, 30, 60]);
+    renderAll();
   };
 
   window.ClickerGame_buyBuildingUpgrade = function(buildingId, tier) {
