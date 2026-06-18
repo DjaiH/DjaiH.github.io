@@ -95,15 +95,15 @@
     ring_gold:     { name:'Gold Ring',        icon:'💍', type:'gear', slot:'ring', tier:1, gxp:0.02, value:200 },
     ring_sapphire: { name:'Sapphire Ring',    icon:'💍', type:'gear', slot:'ring', tier:1, acc:8,  value:400 },
     ring_ruby:     { name:'Ruby Ring',        icon:'💍', type:'gear', slot:'ring', tier:2, str:8,  value:500 },
-    ring_emerald:  { name:'Emerald Ring',     icon:'💍', type:'gear', slot:'ring', tier:2, gspeed:0.08, rare:0.3, value:500 },
+    ring_emerald:  { name:'Emerald Ring',     icon:'💍', type:'gear', slot:'ring', tier:2, gdouble:0.06, rare:0.3, value:500 },
     ring_diamond:  { name:'Diamond Ring',     icon:'💍', type:'gear', slot:'ring', tier:3, acc:10, str:10, value:1200 },
     ring_wealth:   { name:'Ring of Wealth',    icon:'💍', type:'gear', slot:'ring', tier:3, coin:0.25, rare:0.4, value:2500 },
     ring_dragon:   { name:'Dragonstone Ring',  icon:'💍', type:'gear', slot:'ring', tier:4, acc:18, str:18, gxp:0.04, value:9000 },
     // Crafted gloves (Crafting skill) — a new 🧤 gloves equip slot
     gloves_keen:   { name:'Keen Gloves',     icon:'🧤', type:'gear', slot:'gloves', tier:1, acc:10, value:400 },
     gloves_power:  { name:'Power Gloves',    icon:'🧤', type:'gear', slot:'gloves', tier:1, str:10, value:400 },
-    gloves_swift:  { name:'Swift Gloves',    icon:'🧤', type:'gear', slot:'gloves', tier:2, gspeed:0.10, rare:0.2, value:800 },
-    gloves_master: { name:'Master Gloves',   icon:'🧤', type:'gear', slot:'gloves', tier:3, acc:12, str:12, gspeed:0.05, value:2200 },
+    gloves_swift:  { name:'Swift Gloves',    icon:'🧤', type:'gear', slot:'gloves', tier:2, gdouble:0.08, rare:0.2, value:800 },
+    gloves_master: { name:'Master Gloves',   icon:'🧤', type:'gear', slot:'gloves', tier:3, acc:12, str:12, preserve:0.10, value:2200 },
     // gear (slot weapon/armor/tool) — 6 metal tiers
     weapon_bronze: { name:'Bronze Sword',     icon:'🗡️', type:'gear', slot:'weapon', tier:1, acc:6,  str:6,  value:40 },
     weapon_iron:   { name:'Iron Sword',       icon:'🗡️', type:'gear', slot:'weapon', tier:2, acc:12, str:11, value:120 },
@@ -137,7 +137,7 @@
     // amulets (equip slot 'amulet') — build choices, equipped manually
     amulet_sapphire:{ name:'Amulet of Accuracy', icon:'📿', type:'gear', slot:'amulet', tier:1, acc:12,            value:400 },
     amulet_ruby:    { name:'Amulet of Power',    icon:'📿', type:'gear', slot:'amulet', tier:2, str:14,            value:900 },
-    amulet_emerald: { name:'Amulet of Foraging', icon:'📿', type:'gear', slot:'amulet', tier:2, gspeed:0.15, rare:0.5, value:900 },
+    amulet_emerald: { name:'Amulet of Foraging', icon:'📿', type:'gear', slot:'amulet', tier:2, gdouble:0.12, rare:0.5, value:900 },
     amulet_diamond: { name:'Amulet of Skill',    icon:'📿', type:'gear', slot:'amulet', tier:3, acc:12, str:12, rare:0.3, value:2400 },
     amulet_glory:   { name:'Amulet of Glory',    icon:'🏵️', type:'gear', slot:'amulet', tier:4, acc:22, str:22, rare:0.6, value:8000 },
     // ─── Unique super-rare drops (manual-equip build pieces; drop < 0.01%) ───
@@ -146,12 +146,12 @@
     weapon_abyssal:     { name:'Abyssal Edge',     icon:'🌀', type:'gear', slot:'weapon', unique:true, tier:8, acc:150, str:135, gxp:0.05, value:120000, trait:'+5% XP from kills' },
     // Rings (new slot)
     ring_power:   { name:'Ring of Power',    icon:'💍', type:'gear', slot:'ring', unique:true, tier:1, acc:30, str:30, value:40000, trait:'Raw combat might' },
-    ring_fortune: { name:'Ring of Fortune',  icon:'💍', type:'gear', slot:'ring', unique:true, tier:2, rare:1.0, gspeed:0.10, value:60000, trait:'+100% rare-drop chance, +10% gathering' },
+    ring_fortune: { name:'Ring of Fortune',  icon:'💍', type:'gear', slot:'ring', unique:true, tier:2, rare:1.0, gdouble:0.10, value:60000, trait:'+100% rare-drop chance, +10% double gather' },
     ring_thief:   { name:'Ring of the Thief', icon:'💍', type:'gear', slot:'ring', unique:true, tier:3, coin:0.5, rare:0.5, value:70000, trait:'+50% coins, +50% rare-drop chance' },
     ring_scholar: { name:'Ring of the Scholar', icon:'💍', type:'gear', slot:'ring', unique:true, tier:2, gxp:0.07, value:60000, trait:'+7% XP from everything' },
     // Hats (new slot)
     hat_slayer:   { name:"Slayer's Helm",    icon:'🪖', type:'gear', slot:'hat', unique:true, tier:2, acc:18, str:18, def:20, slayerPts:2, value:50000, trait:'+2 Slayer points per task' },
-    hat_anglers:  { name:"Angler's Hat",     icon:'🎣', type:'gear', slot:'hat', unique:true, tier:1, gspeed:0.12, gxp:0.03, value:30000, trait:'+12% gathering speed, +3% XP' },
+    hat_anglers:  { name:"Angler's Hat",     icon:'🎣', type:'gear', slot:'hat', unique:true, tier:1, gdouble:0.12, gxp:0.03, value:30000, trait:'+12% double gather, +3% XP' },
     hat_wisdom:   { name:'Crown of Wisdom',  icon:'👑', type:'gear', slot:'hat', unique:true, tier:3, gxp:0.10, def:15, value:90000, trait:'+10% XP from everything' },
   };
   // Skill capes — earned at level 99, a 'cape' equip slot. Each gives +5% global
@@ -452,15 +452,21 @@
     if (it.acc) p.push(`+${it.acc} acc`);
     if (it.str) p.push(`+${it.str} str`);
     if (it.def) p.push(`+${it.def} def`);
-    if (it.speed) p.push(`+${Math.round(it.speed * 100)}% gather`);
-    if (it.gspeed) p.push(`+${Math.round(it.gspeed * 100)}% gather`);
+    if (it.speed) p.push(`+${Math.round(it.speed * 100)}% gather speed`);
+    if (it.gdouble) p.push(`+${Math.round(it.gdouble * 100)}% double gather`);
+    if (it.preserve) p.push(`+${Math.round(it.preserve * 100)}% material save`);
     if (it.rare) p.push(`+${Math.round(it.rare * 100)}% rare`);
     if (it.gxp) p.push(`+${Math.round(it.gxp * 100)}% XP`);
     if (it.slayerPts) p.push(`+${it.slayerPts} slayer pts`);
     if (it.coin) p.push(`+${Math.round(it.coin * 100)}% coins`);
     return p.join(' · ');
   }
-  function toolSpeed()        { return eqSum('speed') + eqSum('gspeed'); }
+  function toolSpeed()        { return eqSum('speed'); }
+  // Gear bonuses for skilling. Double-gather applies to pure gathering actions
+  // (an item with no inputs: woodcutting/fishing/mining/thieving). Preservation
+  // is a chance to NOT consume inputs on production actions (cook/smith/craft…).
+  function gearDouble(a)   { return (a.item && !a.inputs) ? eqSum('gdouble') : 0; }
+  function gearPreserve(a) { return a.inputs ? Math.min(0.80, eqSum('preserve')) : 0; }
   // Skill-cape perks: does the worn cape help this skill / combat / cooking?
   function capeHelps(skillId) { const c = equippedItem('cape'); return !!c && (c.perkSkill === skillId || c.perkSkill === 'all'); }
   function capeCombat()       { const c = equippedItem('cape'); return c && (c.perkType === 'combat' || c.perkType === 'all') ? 0.05 : 0; }
@@ -573,9 +579,9 @@
   function completeSkillCycle(a) {
     if (a.inputs) {
       if (!hasInputs(a.inputs)) { Toast.show('🛑', 'Out of materials', 'Stopped ' + a.name); S.action = null; return false; }
-      spendInputs(a.inputs);
+      if (!(Math.random() < gearPreserve(a))) spendInputs(a.inputs); // preservation: chance to keep materials
     }
-    const dbl = Math.random() < masteryDouble(a.id);   // mastery: chance at double yield
+    const dbl = Math.random() < (masteryDouble(a.id) + gearDouble(a));   // mastery + gear: chance at double yield
     if (a.output) {
       const burned = a.burn && Math.random() < cookBurnChance(a);
       if (!burned) {
@@ -951,8 +957,8 @@
           if (cycles > 0) {
             let made = 0, xp = 0;
             for (let i = 0; i < cycles; i++) {
-              if (a.inputs) { if (!hasInputs(a.inputs)) break; spendInputs(a.inputs); }
-              const dbl = Math.random() < masteryDouble(a.id);
+              if (a.inputs) { if (!hasInputs(a.inputs)) break; if (!(Math.random() < gearPreserve(a))) spendInputs(a.inputs); }
+              const dbl = Math.random() < (masteryDouble(a.id) + gearDouble(a));
               if (a.output) { const burn = a.burn && Math.random() < cookBurnChance(a); if (!burn) { bankAdd(a.output, dbl ? 2 : 1); made++; xp += a.xp; } else xp += Math.floor(a.xp * 0.3); }
               else if (a.item) { bankAdd(a.item, (dbl ? 2 : 1) * (a.qty || 1)); made++; xp += a.xp; rollRareDrops(a, true); }
               else { xp += dbl ? Math.round(a.xp * 1.5) : a.xp; made++; }
@@ -1196,7 +1202,7 @@
         <div class="progress-bar" style="height:5px;margin-top:4px"><div class="progress-fill green" style="width:${Math.min(100, progress / eff * 100)}%"></div></div>
         <div style="font-size:12px;color:var(--text2);margin-top:6px">${skillEtaLine(a)}</div>
         ${a.inputs ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${inputsLine(a)}</div>` : ''}
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">🎯 Mastery Lv.${masteryLevel(a.id)}/${MASTERY_CAP} · ${Math.round(masterySpeed(a.id) * 100)}% faster · ${Math.round(masteryDouble(a.id) * 100)}% double · ${masteryEtaLine(a)}</div>`;
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">🎯 Mastery Lv.${masteryLevel(a.id)}/${MASTERY_CAP} · ${Math.round(masterySpeed(a.id) * 100)}% faster · ${Math.round((masteryDouble(a.id) + gearDouble(a)) * 100)}% double${gearPreserve(a) ? ' · ' + Math.round(gearPreserve(a) * 100) + '% save' : ''} · ${masteryEtaLine(a)}</div>`;
     }
   }
 
@@ -1603,7 +1609,7 @@
         <p class="mt-8"><b>Gathering</b> (🪓🎣⛏️) yields raw materials. <b>Production</b> (🔥🍳🔨) turns them into goods: smelt ore → bars → <b>gear</b>, and cook fish → <b>food</b>.</p>
         <p class="mt-8"><b>Combat</b> uses your gear and auto-eats food when hurt. Pick a <b>style</b> — Accurate (Attack), Aggressive (Strength) or Defensive (Defence) — to choose which combat skill levels. Run out of food and you retreat, so keep cooking!</p>
         <p class="mt-8"><b>Rare drops:</b> gathering can yield uncut <b>gems</b> 🔹 (mining is best). Cut them at the forge and craft <b>📿 amulets</b> — a separate equip slot and a real build choice (Power, Accuracy, Foraging, or the dragonstone-only <b>Glory</b>).</p>
-        <p class="mt-8"><b>Synergies:</b> smithed <b>tools</b> + an Amulet of Foraging speed gathering (and boost rare drops); <b>Mining</b> level speeds Smithing; <b>Firemaking</b> + Cooking cut burning; and your <b>Cooking</b> level makes every food heal more. Everything feeds everything.</p>
+        <p class="mt-8"><b>Synergies:</b> smithed <b>tools</b> speed up gathering, while accessories like the <b>Amulet of Foraging</b> add a chance to <b>gather double</b> (and boost rare drops); the <b>Master Gloves</b> can <b>save materials</b> when producing; <b>Mining</b> level speeds Smithing; <b>Firemaking</b> + Cooking cut burning; and your <b>Cooking</b> level makes every food heal more. Everything feeds everything.</p>
         <p class="mt-8"><b>💀 Slayer:</b> take a <b>task</b> (kill N of a monster) for Slayer XP, bonus coins and Slayer points — spend points on permanent perks. <b>🎽 Skill capes</b> drop when you hit <b>99</b> in a skill: a cape slot giving +5% XP plus a perk for its skill (Max Cape for all-99).</p>
         <p class="mt-8"><b>Mastery</b> rises per action (faster + double yields), and the <b>🛒 Store</b> spends coins on permanent boosts. Every skill grinds to <b>99</b> and loot is <b>rare</b> on purpose — a long game. Have fun.</p>
       `,
