@@ -1450,6 +1450,7 @@
       ['Amulets', id => ITEMS[id].slot === 'amulet'],
       ['Rings',   id => ITEMS[id].slot === 'ring'],
       ['Hats',    id => ITEMS[id].slot === 'hat'],
+      ['Gloves',  id => ITEMS[id].slot === 'gloves'],
       ['Capes',   id => ITEMS[id].slot === 'cape'],
       ['Food',    id => ITEMS[id].type === 'food'],
       ['Raw fish',id => ITEMS[id].type === 'raw'],
@@ -1457,8 +1458,11 @@
       ['Ores',    id => ITEMS[id].type === 'ore'],
       ['Bars',    id => ITEMS[id].type === 'bar'],
       ['Gems',    id => ITEMS[id].type === 'uncut' || ITEMS[id].type === 'gem'],
+      // Catch-all so a new slot/type can never silently drop out of the codex.
+      ['Other',   id => id !== 'coins'],
     ];
     const ids = Object.keys(ITEMS);
+    const seen = new Set();
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
     html += `<div style="display:flex;justify-content:space-between;align-items:center">
         <span class="menu-section-title" style="padding:0">📖 Item Codex</span>
@@ -1466,8 +1470,9 @@
       </div>
       <div style="font-size:12px;color:var(--text2)">Every item in the game, its effect, sell value, and how many you own (✓ = owned).</div>`;
     groups.forEach(([label, test]) => {
-      const members = ids.filter(id => { try { return test(id); } catch { return false; } });
+      const members = ids.filter(id => { try { return !seen.has(id) && test(id); } catch { return false; } });
       if (!members.length) return;
+      members.forEach(id => seen.add(id));
       html += `<div class="menu-section-title" style="padding:8px 2px 2px">${label}</div>`;
       members.forEach(id => {
         const it = ITEMS[id], have = bankCount(id);
