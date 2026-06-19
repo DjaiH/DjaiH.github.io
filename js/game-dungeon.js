@@ -809,7 +809,7 @@
   window.IdleRealm_sell = function(id) {
     const it = ITEMS[id]; if (!it || id === 'coins') return;
     const have = bankCount(id); if (have < 1) return;
-    const q = sellAmt === 'all' ? have : Math.min(parseInt(sellAmt), have);
+    const q = sellAmt === 'all' ? have : sellAmt === 'all1' ? have - 1 : Math.min(parseInt(sellAmt), have);
     if (q < 1) return;
     const gold = (it.value || 1) * q;
     bankRemove(id, q); bankAdd('coins', gold);
@@ -1389,14 +1389,14 @@
         <span style="${slotsFull ? 'color:var(--red)' : ''}">🎒 ${bankSlotsUsed()}/${bankSlotsMax()} slots</span>
       </div>`;
     // Sell-amount selector — choose how many to sell per tap
-    const amts = [['1', '×1'], ['10', '×10'], ['100', '×100'], ['1000', '×1000'], ['all', 'All']];
+    const amts = [['1', '×1'], ['10', '×10'], ['100', '×100'], ['1000', '×1000'], ['all1', 'All-1'], ['all', 'All']];
     html += `<div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--text2)">Sell</span>${amts.map(([v, l]) => `<button class="buy-amt-btn ${sellAmt === v ? 'active' : ''}" onclick="IdleRealm_setSellAmt('${v}')">${l}</button>`).join('')}</div>`;
     ids.forEach(id => {
       const it = ITEMS[id] || { name: id, icon: '❔' };
       const isGear = it.type === 'gear';
       const equipped = isGear && S.equip[it.slot] === id;
       const have = bankCount(id);
-      const nSell = sellAmt === 'all' ? have : Math.min(parseInt(sellAmt), have);
+      const nSell = sellAmt === 'all' ? have : sellAmt === 'all1' ? Math.max(0, have - 1) : Math.min(parseInt(sellAmt), have);
       let sub = '';
       if (isGear) {
         if (it.slot === 'cape') sub = `+${Math.round((it.gxp || 0) * 100)}% XP` + (it.perkSkill === 'all' ? ' + all perks' : ` + ${SKILL[it.perkSkill] ? SKILL[it.perkSkill].name : ''} perk`);
