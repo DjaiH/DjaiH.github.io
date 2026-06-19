@@ -117,12 +117,12 @@
     armor_mithril: { name:'Mithril Platebody',icon:'🛡️', type:'gear', slot:'armor',  tier:4, def:60, value:1100 },
     armor_adamant: { name:'Adamant Platebody',icon:'🛡️', type:'gear', slot:'armor',  tier:5, def:92, value:2600 },
     armor_rune:    { name:'Rune Platebody',   icon:'🛡️', type:'gear', slot:'armor',  tier:6, def:132,value:6000 },
-    tool_bronze:   { name:'Bronze Toolkit',   icon:'🛠️', type:'gear', slot:'tool',   tier:1, speed:0.06, value:60 },
-    tool_iron:     { name:'Iron Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:2, speed:0.12, value:180 },
-    tool_steel:    { name:'Steel Toolkit',    icon:'🛠️', type:'gear', slot:'tool',   tier:3, speed:0.20, value:480 },
-    tool_mithril:  { name:'Mithril Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:4, speed:0.30, value:1300 },
-    tool_adamant:  { name:'Adamant Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:5, speed:0.42, value:3000 },
-    tool_rune:     { name:'Rune Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:6, speed:0.55, value:6500 },
+    tool_bronze:   { name:'Bronze Toolkit',   icon:'🛠️', type:'gear', slot:'tool',   tier:1, speed:0.06, preserve:0.03, value:60 },
+    tool_iron:     { name:'Iron Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:2, speed:0.12, preserve:0.05, value:180 },
+    tool_steel:    { name:'Steel Toolkit',    icon:'🛠️', type:'gear', slot:'tool',   tier:3, speed:0.20, preserve:0.08, value:480 },
+    tool_mithril:  { name:'Mithril Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:4, speed:0.30, preserve:0.11, value:1300 },
+    tool_adamant:  { name:'Adamant Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:5, speed:0.42, preserve:0.14, value:3000 },
+    tool_rune:     { name:'Rune Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:6, speed:0.55, preserve:0.18, value:6500 },
     // uncut gems — rare gathering drops
     usapphire:   { name:'Uncut Sapphire', icon:'🔹', type:'uncut', value:60 },
     uemerald:    { name:'Uncut Emerald',  icon:'🟢', type:'uncut', value:120 },
@@ -1614,7 +1614,7 @@
         <p class="mt-8"><b>Gathering</b> (🪓🎣⛏️) yields raw materials. <b>Production</b> (🔥🍳🔨) turns them into goods: smelt ore → bars → <b>gear</b>, and cook fish → <b>food</b>.</p>
         <p class="mt-8"><b>Combat</b> uses your gear and auto-eats food when hurt. Pick a <b>style</b> — Accurate (Attack), Aggressive (Strength) or Defensive (Defence) — to choose which combat skill levels. Run out of food and you retreat, so keep cooking!</p>
         <p class="mt-8"><b>Rare drops:</b> gathering can yield uncut <b>gems</b> 🔹 (mining is best). Cut them at the forge and craft <b>📿 amulets</b> — a separate equip slot and a real build choice (Power, Accuracy, Foraging, or the dragonstone-only <b>Glory</b>).</p>
-        <p class="mt-8"><b>Synergies:</b> smithed <b>tools</b> speed up gathering, while accessories like the <b>Amulet of Foraging</b> add a chance to <b>gather double</b> (and boost rare drops); the <b>Master Gloves</b> can <b>save materials</b> when producing; <b>Mining</b> level speeds Smithing; <b>Firemaking</b> + Cooking cut burning; and your <b>Cooking</b> level makes every food heal more. Everything feeds everything.</p>
+        <p class="mt-8"><b>Synergies:</b> smithed <b>toolkits</b> speed up gathering <em>and</em> can <b>save materials</b> when producing, while accessories like the <b>Amulet of Foraging</b> add a chance to <b>gather double</b> (and boost rare drops); the <b>Master Gloves</b> also <b>save materials</b>; <b>Mining</b> level speeds Smithing; <b>Firemaking</b> + Cooking cut burning; and your <b>Cooking</b> level makes every food heal more. Everything feeds everything.</p>
         <p class="mt-8"><b>💀 Slayer:</b> take a <b>task</b> (kill N of a monster) for Slayer XP, bonus coins and Slayer points — spend points on permanent perks. <b>🎽 Skill capes</b> drop when you hit <b>99</b> in a skill: a cape slot giving +5% XP plus a perk for its skill (Max Cape for all-99).</p>
         <p class="mt-8"><b>Mastery</b> rises per action (faster + double yields), and the <b>🛒 Store</b> spends coins on permanent boosts. Every skill grinds to <b>99</b> and loot is <b>rare</b> on purpose — a long game. Have fun.</p>
       `,
