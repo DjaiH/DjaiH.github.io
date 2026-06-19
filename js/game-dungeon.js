@@ -56,6 +56,7 @@
     log_mahogany:{ name:'Mahogany Logs',  icon:'🪵', type:'log',  value:55 },
     log_yew:     { name:'Yew Logs',       icon:'🪵', type:'log',  value:90 },
     log_magic:   { name:'Magic Logs',     icon:'🪵', type:'log',  value:150 },
+    log_elder:   { name:'Elder Logs',     icon:'🪵', type:'log',  value:260 },
     // raw fish (8 tiers)
     fish_shrimp: { name:'Raw Shrimp',     icon:'🦐', type:'raw',  value:2 },
     fish_sardine:{ name:'Raw Sardine',    icon:'🐟', type:'raw',  value:4 },
@@ -65,6 +66,8 @@
     fish_lobster:{ name:'Raw Lobster',    icon:'🦞', type:'raw',  value:30 },
     fish_sword:  { name:'Raw Swordfish',  icon:'🐠', type:'raw',  value:55 },
     fish_shark:  { name:'Raw Shark',      icon:'🦈', type:'raw',  value:95 },
+    fish_manta:  { name:'Raw Manta Ray',  icon:'🐡', type:'raw',  value:150 },
+    fish_angler: { name:'Raw Anglerfish', icon:'🎏', type:'raw',  value:220 },
     // cooked food (heal in combat)
     food_shrimp: { name:'Shrimp',         icon:'🦐', type:'food', heal:30,  value:4 },
     food_sardine:{ name:'Sardine',        icon:'🐟', type:'food', heal:45,  value:7 },
@@ -74,6 +77,8 @@
     food_lobster:{ name:'Lobster',        icon:'🦞', type:'food', heal:200, value:45 },
     food_sword:  { name:'Swordfish',      icon:'🐠', type:'food', heal:280, value:80 },
     food_shark:  { name:'Shark',          icon:'🦈', type:'food', heal:400, value:150 },
+    food_manta:  { name:'Manta Ray',      icon:'🐡', type:'food', heal:560, value:230 },
+    food_angler: { name:'Anglerfish',     icon:'🎏', type:'food', heal:720, value:340 },
     // ores (8 nodes)
     ore_copper:  { name:'Copper Ore',     icon:'🟤', type:'ore',  value:3 },
     ore_tin:     { name:'Tin Ore',        icon:'⚪', type:'ore',  value:3 },
@@ -83,6 +88,7 @@
     ore_mithril: { name:'Mithril Ore',    icon:'🔵', type:'ore',  value:48 },
     ore_adamantite:{ name:'Adamantite Ore',icon:'🟩', type:'ore', value:110 },
     ore_runite:  { name:'Runite Ore',     icon:'🟦', type:'ore',  value:260 },
+    ore_dragon:  { name:'Dragonite Ore',  icon:'🟥', type:'ore',  value:600 },
     // bars (6 metal tiers)
     bar_bronze:  { name:'Bronze Bar',     icon:'🟫', type:'bar',  value:8 },
     bar_iron:    { name:'Iron Bar',       icon:'⬜', type:'bar',  value:24 },
@@ -90,6 +96,7 @@
     bar_mithril: { name:'Mithril Bar',    icon:'🟦', type:'bar',  value:160 },
     bar_adamant: { name:'Adamant Bar',    icon:'🟩', type:'bar',  value:360 },
     bar_rune:    { name:'Rune Bar',       icon:'🟪', type:'bar',  value:800 },
+    bar_dragon:  { name:'Dragonite Bar',  icon:'🟥', type:'bar',  value:1600 },
     bar_gold:    { name:'Gold Bar',       icon:'🟨', type:'bar',  value:90 },
     // Craftable rings (Crafting skill) — accessible ring-slot gear (no level req)
     ring_gold:     { name:'Gold Ring',        icon:'💍', type:'gear', slot:'ring', tier:1, gxp:0.02, value:200 },
@@ -99,11 +106,13 @@
     ring_diamond:  { name:'Diamond Ring',     icon:'💍', type:'gear', slot:'ring', tier:3, acc:10, str:10, value:1200 },
     ring_wealth:   { name:'Ring of Wealth',    icon:'💍', type:'gear', slot:'ring', tier:3, coin:0.25, rare:0.4, value:2500 },
     ring_dragon:   { name:'Dragonstone Ring',  icon:'💍', type:'gear', slot:'ring', tier:4, acc:18, str:18, gxp:0.04, value:9000 },
+    ring_signet:   { name:'Dragon Signet',     icon:'💍', type:'gear', slot:'ring', tier:5, acc:24, str:24, coin:0.20, value:13000 },
     // Crafted gloves (Crafting skill) — a new 🧤 gloves equip slot
     gloves_keen:   { name:'Keen Gloves',     icon:'🧤', type:'gear', slot:'gloves', tier:1, acc:10, value:400 },
     gloves_power:  { name:'Power Gloves',    icon:'🧤', type:'gear', slot:'gloves', tier:1, str:10, value:400 },
     gloves_swift:  { name:'Swift Gloves',    icon:'🧤', type:'gear', slot:'gloves', tier:2, gdouble:0.08, rare:0.2, value:800 },
     gloves_master: { name:'Master Gloves',   icon:'🧤', type:'gear', slot:'gloves', tier:3, acc:12, str:12, preserve:0.10, value:2200 },
+    gloves_dragon: { name:'Dragonhide Gloves',icon:'🧤', type:'gear', slot:'gloves', tier:4, acc:18, str:18, gdouble:0.06, preserve:0.06, value:9000 },
     // gear (slot weapon/armor/tool) — 6 metal tiers
     weapon_bronze: { name:'Bronze Sword',     icon:'🗡️', type:'gear', slot:'weapon', tier:1, acc:6,  str:6,  value:40 },
     weapon_iron:   { name:'Iron Sword',       icon:'🗡️', type:'gear', slot:'weapon', tier:2, acc:12, str:11, value:120 },
@@ -111,18 +120,21 @@
     weapon_mithril:{ name:'Mithril Sword',    icon:'⚔️', type:'gear', slot:'weapon', tier:4, acc:38, str:34, value:900 },
     weapon_adamant:{ name:'Adamant Sword',    icon:'⚔️', type:'gear', slot:'weapon', tier:5, acc:58, str:52, value:2200 },
     weapon_rune:   { name:'Rune Sword',       icon:'⚔️', type:'gear', slot:'weapon', tier:6, acc:82, str:74, value:5000 },
+    weapon_dragon: { name:'Dragonite Sword',  icon:'⚔️', type:'gear', slot:'weapon', tier:7, acc:98, str:90, value:14000 },
     armor_bronze:  { name:'Bronze Platebody', icon:'🛡️', type:'gear', slot:'armor',  tier:1, def:10, value:50 },
     armor_iron:    { name:'Iron Platebody',   icon:'🛡️', type:'gear', slot:'armor',  tier:2, def:20, value:150 },
     armor_steel:   { name:'Steel Platebody',  icon:'🛡️', type:'gear', slot:'armor',  tier:3, def:36, value:420 },
     armor_mithril: { name:'Mithril Platebody',icon:'🛡️', type:'gear', slot:'armor',  tier:4, def:60, value:1100 },
     armor_adamant: { name:'Adamant Platebody',icon:'🛡️', type:'gear', slot:'armor',  tier:5, def:92, value:2600 },
     armor_rune:    { name:'Rune Platebody',   icon:'🛡️', type:'gear', slot:'armor',  tier:6, def:132,value:6000 },
+    armor_dragon:  { name:'Dragonite Platebody',icon:'🛡️',type:'gear', slot:'armor',  tier:7, def:160,value:16000 },
     tool_bronze:   { name:'Bronze Toolkit',   icon:'🛠️', type:'gear', slot:'tool',   tier:1, speed:0.06, preserve:0.03, value:60 },
     tool_iron:     { name:'Iron Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:2, speed:0.12, preserve:0.05, value:180 },
     tool_steel:    { name:'Steel Toolkit',    icon:'🛠️', type:'gear', slot:'tool',   tier:3, speed:0.20, preserve:0.08, value:480 },
     tool_mithril:  { name:'Mithril Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:4, speed:0.30, preserve:0.11, value:1300 },
     tool_adamant:  { name:'Adamant Toolkit',  icon:'🛠️', type:'gear', slot:'tool',   tier:5, speed:0.42, preserve:0.14, value:3000 },
     tool_rune:     { name:'Rune Toolkit',     icon:'🛠️', type:'gear', slot:'tool',   tier:6, speed:0.55, preserve:0.18, value:6500 },
+    tool_dragon:   { name:'Dragonite Toolkit',icon:'🛠️', type:'gear', slot:'tool',   tier:7, speed:0.65, preserve:0.24, value:16000 },
     // uncut gems — rare gathering drops
     usapphire:   { name:'Uncut Sapphire', icon:'🔹', type:'uncut', value:60 },
     uemerald:    { name:'Uncut Emerald',  icon:'🟢', type:'uncut', value:120 },
@@ -159,7 +171,7 @@
   SKILLS.forEach((s, i) => { ITEMS['cape_' + s.id] = { name: s.name + ' Cape', icon: '🎽', type: 'gear', slot: 'cape', tier: i + 1, gxp: 0.05, perkSkill: s.id, perkType: s.kind, value: 5000 }; });
   ITEMS['cape_max'] = { name: 'Max Cape', icon: '🧥', type: 'gear', slot: 'cape', tier: 99, gxp: 0.10, perkSkill: 'all', perkType: 'all', value: 50000 };
   // Level requirements: weapons need Attack; armour & hats need Defence (RS-style).
-  const TIER_REQ = { 1: 1, 2: 10, 3: 20, 4: 30, 5: 40, 6: 50 };
+  const TIER_REQ = { 1: 1, 2: 10, 3: 20, 4: 30, 5: 40, 6: 50, 7: 65 };
   Object.keys(ITEMS).forEach(id => {
     const it = ITEMS[id];
     if (it.type !== 'gear') return;
@@ -193,6 +205,7 @@
     { id:'wc_mahogany',skill:'woodcutting', name:'Mahogany Tree',icon:'🌲', lvl:55, xp:88,  time:5.6, item:'log_mahogany' },
     { id:'wc_yew',     skill:'woodcutting', name:'Yew Tree',     icon:'🌲', lvl:70, xp:135, time:6.4, item:'log_yew' },
     { id:'wc_magic',   skill:'woodcutting', name:'Magic Tree',   icon:'🎄', lvl:85, xp:220, time:7.4, item:'log_magic' },
+    { id:'wc_elder',   skill:'woodcutting', name:'Elder Tree',   icon:'🌴', lvl:92, xp:340, time:8.2, item:'log_elder' },
     // Fishing (8)
     { id:'fs_shrimp',  skill:'fishing', name:'Net Shrimp',       icon:'🦐', lvl:1,  xp:7,   time:3.0, item:'fish_shrimp' },
     { id:'fs_sardine', skill:'fishing', name:'Bait Sardine',     icon:'🐟', lvl:5,  xp:12,  time:3.2, item:'fish_sardine' },
@@ -202,6 +215,8 @@
     { id:'fs_lobster', skill:'fishing', name:'Cage Lobster',     icon:'🦞', lvl:45, xp:68,  time:5.2, item:'fish_lobster' },
     { id:'fs_sword',   skill:'fishing', name:'Harpoon Swordfish',icon:'🐠', lvl:55, xp:95,  time:5.8, item:'fish_sword' },
     { id:'fs_shark',   skill:'fishing', name:'Harpoon Shark',    icon:'🦈', lvl:76, xp:160, time:6.8, item:'fish_shark' },
+    { id:'fs_manta',   skill:'fishing', name:'Net Manta Ray',    icon:'🐡', lvl:82, xp:215, time:7.2, item:'fish_manta' },
+    { id:'fs_angler',  skill:'fishing', name:'Lure Anglerfish',  icon:'🎏', lvl:92, xp:300, time:7.8, item:'fish_angler' },
     // Mining (8)
     { id:'mn_copper',  skill:'mining', name:'Copper Vein',   icon:'🟤', lvl:1,  xp:8,   time:3.0, item:'ore_copper' },
     { id:'mn_tin',     skill:'mining', name:'Tin Vein',      icon:'⚪', lvl:1,  xp:8,   time:3.0, item:'ore_tin' },
@@ -211,6 +226,7 @@
     { id:'mn_mithril', skill:'mining', name:'Mithril Vein',  icon:'🔵', lvl:50, xp:70,  time:5.4, item:'ore_mithril' },
     { id:'mn_adamant', skill:'mining', name:'Adamantite Vein',icon:'🟩', lvl:65, xp:110, time:6.2, item:'ore_adamantite' },
     { id:'mn_runite',  skill:'mining', name:'Runite Vein',   icon:'🟦', lvl:80, xp:180, time:7.2, item:'ore_runite' },
+    { id:'mn_dragon',  skill:'mining', name:'Dragonite Vein',icon:'🟥', lvl:90, xp:280, time:8.0, item:'ore_dragon' },
     // Firemaking (8) — burns logs for XP
     { id:'fm_normal',  skill:'firemaking', name:'Burn Logs',          icon:'🔥', lvl:1,  xp:12,  time:2.2, inputs:{ log_normal:1 } },
     { id:'fm_oak',     skill:'firemaking', name:'Burn Oak Logs',      icon:'🔥', lvl:15, xp:24,  time:2.6, inputs:{ log_oak:1 } },
@@ -220,6 +236,7 @@
     { id:'fm_mahogany',skill:'firemaking', name:'Burn Mahogany Logs', icon:'🔥', lvl:55, xp:115, time:4.0, inputs:{ log_mahogany:1 } },
     { id:'fm_yew',     skill:'firemaking', name:'Burn Yew Logs',      icon:'🔥', lvl:70, xp:175, time:4.6, inputs:{ log_yew:1 } },
     { id:'fm_magic',   skill:'firemaking', name:'Burn Magic Logs',    icon:'🔥', lvl:85, xp:280, time:5.2, inputs:{ log_magic:1 } },
+    { id:'fm_elder',   skill:'firemaking', name:'Burn Elder Logs',    icon:'🔥', lvl:92, xp:430, time:5.8, inputs:{ log_elder:1 } },
     // Cooking (8) — raw → food, can burn
     { id:'ck_shrimp',  skill:'cooking', name:'Cook Shrimp',    icon:'🦐', lvl:1,  xp:10,  time:2.2, inputs:{ fish_shrimp:1 },  output:'food_shrimp',  burn:0.30 },
     { id:'ck_sardine', skill:'cooking', name:'Cook Sardine',   icon:'🐟', lvl:5,  xp:16,  time:2.4, inputs:{ fish_sardine:1 }, output:'food_sardine', burn:0.29 },
@@ -229,6 +246,8 @@
     { id:'ck_lobster', skill:'cooking', name:'Cook Lobster',   icon:'🦞', lvl:45, xp:72,  time:3.6, inputs:{ fish_lobster:1 }, output:'food_lobster', burn:0.23 },
     { id:'ck_sword',   skill:'cooking', name:'Cook Swordfish', icon:'🐠', lvl:55, xp:100, time:4.0, inputs:{ fish_sword:1 },   output:'food_sword',   burn:0.22 },
     { id:'ck_shark',   skill:'cooking', name:'Cook Shark',     icon:'🦈', lvl:80, xp:165, time:4.6, inputs:{ fish_shark:1 },   output:'food_shark',   burn:0.20 },
+    { id:'ck_manta',   skill:'cooking', name:'Cook Manta Ray', icon:'🐡', lvl:84, xp:215, time:4.8, inputs:{ fish_manta:1 },   output:'food_manta',   burn:0.18 },
+    { id:'ck_angler',  skill:'cooking', name:'Cook Anglerfish',icon:'🎏', lvl:93, xp:300, time:5.2, inputs:{ fish_angler:1 },  output:'food_angler',  burn:0.16 },
     // Smithing — smelt bars (6)
     { id:'sm_bronze', skill:'smithing', name:'Smelt Bronze', icon:'🟫', lvl:1,  xp:10,  time:3.0, inputs:{ ore_copper:1, ore_tin:1 },     output:'bar_bronze' },
     { id:'sm_iron',   skill:'smithing', name:'Smelt Iron',   icon:'⬜', lvl:15, xp:20,  time:3.4, inputs:{ ore_iron:1 },                  output:'bar_iron' },
@@ -236,6 +255,7 @@
     { id:'sm_mithril',skill:'smithing', name:'Smelt Mithril',icon:'🟦', lvl:50, xp:70,  time:4.6, inputs:{ ore_mithril:1, ore_coal:4 },   output:'bar_mithril' },
     { id:'sm_adamant',skill:'smithing', name:'Smelt Adamant',icon:'🟩', lvl:70, xp:130, time:5.4, inputs:{ ore_adamantite:1, ore_coal:6 },output:'bar_adamant' },
     { id:'sm_rune',   skill:'smithing', name:'Smelt Runite', icon:'🟪', lvl:85, xp:230, time:6.4, inputs:{ ore_runite:1, ore_coal:8 },    output:'bar_rune' },
+    { id:'sm_dragon', skill:'smithing', name:'Smelt Dragonite',icon:'🟥',lvl:92, xp:360, time:7.0, inputs:{ ore_dragon:1, ore_coal:10 }, output:'bar_dragon' },
     // Smithing — forge gear (6 tiers × weapon/tool/armor)
     { id:'fg_weapon_bronze', skill:'smithing', name:'Forge Bronze Sword',    icon:'🗡️', lvl:4,  xp:25,  time:4.0, inputs:{ bar_bronze:1 },  output:'weapon_bronze' },
     { id:'fg_tool_bronze',   skill:'smithing', name:'Forge Bronze Toolkit',  icon:'🛠️', lvl:6,  xp:40,  time:4.0, inputs:{ bar_bronze:2 },  output:'tool_bronze' },
@@ -255,6 +275,9 @@
     { id:'fg_weapon_rune',   skill:'smithing', name:'Forge Rune Sword',      icon:'⚔️', lvl:85, xp:380, time:6.0, inputs:{ bar_rune:1 },    output:'weapon_rune' },
     { id:'fg_tool_rune',     skill:'smithing', name:'Forge Rune Toolkit',    icon:'🛠️', lvl:87, xp:520, time:6.0, inputs:{ bar_rune:2 },    output:'tool_rune' },
     { id:'fg_armor_rune',    skill:'smithing', name:'Forge Rune Platebody',  icon:'🛡️', lvl:90, xp:700, time:6.4, inputs:{ bar_rune:3 },    output:'armor_rune' },
+    { id:'fg_weapon_dragon', skill:'smithing', name:'Forge Dragonite Sword', icon:'⚔️', lvl:93, xp:620, time:6.6, inputs:{ bar_dragon:2 },  output:'weapon_dragon' },
+    { id:'fg_tool_dragon',   skill:'smithing', name:'Forge Dragonite Toolkit',icon:'🛠️',lvl:94, xp:820, time:6.6, inputs:{ bar_dragon:3 },  output:'tool_dragon' },
+    { id:'fg_armor_dragon',  skill:'smithing', name:'Forge Dragonite Platebody',icon:'🛡️',lvl:96,xp:1100,time:7.0, inputs:{ bar_dragon:5 },  output:'armor_dragon' },
     { id:'sm_gold',          skill:'smithing', name:'Smelt Gold',            icon:'🟨', lvl:40, xp:35,  time:4.0, inputs:{ ore_gold:1 },     output:'bar_gold' },
     // Thieving — pickpocket targets for coins (qty) + rare loot
     { id:'th_citizen',  skill:'thieving', name:'Pickpocket Citizen', icon:'🧍', lvl:1,  xp:8,   time:2.6, item:'coins', qty:6 },
@@ -262,6 +285,8 @@
     { id:'th_noble',    skill:'thieving', name:'Burgle Noble',       icon:'🤵', lvl:35, xp:36,  time:3.6, item:'coins', qty:55 },
     { id:'th_vault',    skill:'thieving', name:'Raid the Vault',     icon:'🏦', lvl:55, xp:72,  time:4.4, item:'coins', qty:150 },
     { id:'th_heist',    skill:'thieving', name:'Master Heist',       icon:'💼', lvl:75, xp:140, time:5.4, item:'coins', qty:420 },
+    { id:'th_palace',   skill:'thieving', name:'Loot the Palace',    icon:'🏰', lvl:85, xp:230, time:6.0, item:'coins', qty:950 },
+    { id:'th_hoard',    skill:'thieving', name:'Raid the Dragon Hoard',icon:'🐉',lvl:95, xp:340, time:6.8, item:'coins', qty:2400 },
     // Crafting — gold bars (+ gems) into wearable rings
     { id:'cr_ring_gold',     skill:'crafting', name:'Craft Gold Ring',     icon:'💍', lvl:1,  xp:30,  time:3.0, inputs:{ bar_gold:1 },              output:'ring_gold' },
     { id:'cr_ring_sapphire', skill:'crafting', name:'Craft Sapphire Ring', icon:'💍', lvl:20, xp:55,  time:3.4, inputs:{ bar_gold:1, sapphire:1 }, output:'ring_sapphire' },
@@ -274,6 +299,8 @@
     { id:'cr_gloves_power',  skill:'crafting', name:'Craft Power Gloves',  icon:'🧤', lvl:18, xp:55,  time:3.6, inputs:{ bar_gold:1, ruby:1 },     output:'gloves_power' },
     { id:'cr_gloves_swift',  skill:'crafting', name:'Craft Swift Gloves',  icon:'🧤', lvl:28, xp:80,  time:3.8, inputs:{ bar_gold:1, emerald:1 },  output:'gloves_swift' },
     { id:'cr_gloves_master', skill:'crafting', name:'Craft Master Gloves', icon:'🧤', lvl:60, xp:200, time:4.8, inputs:{ bar_gold:2, diamond:1 },  output:'gloves_master' },
+    { id:'cr_gloves_dragon', skill:'crafting', name:'Craft Dragonhide Gloves', icon:'🧤', lvl:82, xp:300, time:5.0, inputs:{ bar_gold:2, gem_dragon:1 }, output:'gloves_dragon' },
+    { id:'cr_ring_signet',   skill:'crafting', name:'Craft Dragon Signet',  icon:'💍', lvl:92, xp:560, time:5.6, inputs:{ bar_gold:3, gem_dragon:2 }, output:'ring_signet' },
     // Smithing — cut gems
     { id:'cut_sapphire', skill:'smithing', name:'Cut Sapphire', icon:'🔹', lvl:20, xp:50,  time:3.0, inputs:{ usapphire:1 }, output:'sapphire' },
     { id:'cut_emerald',  skill:'smithing', name:'Cut Emerald',  icon:'🟢', lvl:27, xp:67,  time:3.2, inputs:{ uemerald:1 },  output:'emerald' },
@@ -296,11 +323,16 @@
   ];
   // Mining is the prime gem source (gold veins richest); woodcutting (bird nests)
   // and fishing (oysters) yield gems only rarely. Higher tiers roll a bit better.
-  [['mn_copper',1],['mn_tin',1],['mn_iron',1.4],['mn_coal',1.8],['mn_gold',3.5],['mn_mithril',2.6],['mn_adamant',3.2],['mn_runite',4.0],
-   ['wc_normal',0.4],['wc_oak',0.5],['wc_willow',0.6],['wc_teak',0.65],['wc_maple',0.7],['wc_mahogany',0.8],['wc_yew',0.9],['wc_magic',1.1],
-   ['fs_shrimp',0.4],['fs_sardine',0.45],['fs_trout',0.5],['fs_salmon',0.6],['fs_tuna',0.65],['fs_lobster',0.7],['fs_sword',0.8],['fs_shark',1.0],
-   ['th_citizen',0.5],['th_merchant',0.7],['th_noble',1.0],['th_vault',1.4],['th_heist',2.0]]
+  [['mn_copper',1],['mn_tin',1],['mn_iron',1.4],['mn_coal',1.8],['mn_gold',3.5],['mn_mithril',2.6],['mn_adamant',3.2],['mn_runite',4.0],['mn_dragon',5.0],
+   ['wc_normal',0.4],['wc_oak',0.5],['wc_willow',0.6],['wc_teak',0.65],['wc_maple',0.7],['wc_mahogany',0.8],['wc_yew',0.9],['wc_magic',1.1],['wc_elder',1.4],
+   ['fs_shrimp',0.4],['fs_sardine',0.45],['fs_trout',0.5],['fs_salmon',0.6],['fs_tuna',0.65],['fs_lobster',0.7],['fs_sword',0.8],['fs_shark',1.0],['fs_manta',1.2],['fs_angler',1.5],
+   ['th_citizen',0.5],['th_merchant',0.7],['th_noble',1.0],['th_vault',1.4],['th_heist',2.0],['th_palace',2.6],['th_hoard',3.4]]
     .forEach(([id, mult]) => { if (ACTION[id]) ACTION[id].rare = gemTable(mult); });
+  // Dragonite ore also turns up rarely while mining Runite — lets Smithing bootstrap before 90 Mining.
+  if (ACTION['mn_runite']) ACTION['mn_runite'].rare.push({ item:'ore_dragon', chance:0.02 });
+  // The dragonstone needed for high-tier crafting drops rarely from the very top nodes.
+  [['mn_dragon',0.004],['wc_elder',0.0025],['fs_angler',0.0025],['th_hoard',0.006]]
+    .forEach(([id, chance]) => { if (ACTION[id]) ACTION[id].rare.push({ item:'gem_dragon', chance }); });
   // Ultra-rare unique drops from specific gathering actions (chance < 0.01%)
   [['mn_runite', 'ring_fortune', 0.00006], ['wc_magic', 'ring_scholar', 0.00007],
    ['wc_magic', 'hat_wisdom', 0.00004], ['fs_shark', 'hat_anglers', 0.00009],
