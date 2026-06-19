@@ -120,6 +120,7 @@
       totalBaked:     0,
       totalClicks:    0,
       enigma:         0, // ✦ Enigma Catalyst level (shard-bought CpS multiplier)
+      enigmaClick:    0, // ✦ Enigma Touch level (shard-bought click-power multiplier)
       cpc:            1, // cookies per click (base)
       buildings:      Object.fromEntries(BUILDINGS.map(b => [b.id, 0])),
       buildingUpgrades: {}, // id -> [false, false, false]
@@ -236,6 +237,8 @@
     });
     // +1 cpc per 100 cursors
     const cursorBonus = Math.floor(state.buildings.cursor / 100);
+    // ✦ Enigma Touch: +10% click power per level (bought with shared Enigma Shards)
+    mul *= 1 + 0.10 * (state.enigmaClick || 0);
     return (1 + cursorBonus) * mul * techEffect(state, 'clickMul') * (1 + state.heavenlyChips * 0.02);
   }
 
@@ -422,6 +425,17 @@
           <div class="upg-cost" style="color:var(--text2)">+${eLvl * 5}% CpS · you have ${Fmt.format(Shards.get())} ✦</div>
         </div>
         <div class="upg-effect text-accent">${eMax ? 'MAX' : '✦ ' + eCost}</div>
+      </button>`;
+
+    // ✦ Enigma Touch — shard-bought click-power multiplier
+    const tLvl = S.enigmaClick || 0, tMax = tLvl >= 10, tCost = 3 + tLvl * 3, tAff = !tMax && Shards.get() >= tCost;
+    html += `<button class="upgrade-item ${tMax ? '' : (tAff ? '' : 'locked')}" ${tMax ? '' : 'onclick="ClickerGame_buyEnigmaClick()"'} style="border-color:var(--accent)">
+        <div class="upg-icon">✦</div>
+        <div class="upg-info">
+          <div class="upg-name">Enigma Touch <span style="color:var(--text2);font-size:12px">Lv.${tLvl}/10</span></div>
+          <div class="upg-cost" style="color:var(--text2)">+${tLvl * 10}% click power · you have ${Fmt.format(Shards.get())} ✦</div>
+        </div>
+        <div class="upg-effect text-accent">${tMax ? 'MAX' : '✦ ' + tCost}</div>
       </button>`;
 
     // Click upgrades
@@ -754,14 +768,26 @@
     Haptics.vibrate(40);
   };
 
-  // ✦ Enigma Catalyst — spend shared Enigma Shards (earned in Code Breaker)
+  // ✦ Enigma Catalyst — spend shared Enigma Shards (earned in Enigma Puzzles)
   window.ClickerGame_buyEnigma = function() {
     const lvl = S.enigma || 0;
     if (lvl >= 10) return;
     const cost = 3 + lvl * 3;
-    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Code Breaker`); return; }
+    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Enigma Puzzles`); return; }
     S.enigma = lvl + 1;
     Toast.show('✦', 'Enigma Catalyst → Lv.' + (lvl + 1), `+${(lvl + 1) * 5}% cookies per second`);
+    Haptics.vibrate([40, 30, 60]);
+    renderAll();
+  };
+
+  // ✦ Enigma Touch — spend shards on click power
+  window.ClickerGame_buyEnigmaClick = function() {
+    const lvl = S.enigmaClick || 0;
+    if (lvl >= 10) return;
+    const cost = 3 + lvl * 3;
+    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Enigma Puzzles`); return; }
+    S.enigmaClick = lvl + 1;
+    Toast.show('✦', 'Enigma Touch → Lv.' + (lvl + 1), `+${(lvl + 1) * 10}% click power`);
     Haptics.vibrate([40, 30, 60]);
     renderAll();
   };

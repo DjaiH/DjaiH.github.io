@@ -528,9 +528,9 @@
   function shopDef(id) { return SHOP.find(s => s.id === id); }
   function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
   function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + eqSum('gxp') + 0.03 * shopLvl('enigma'); }
-  function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat(); }
+  function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat() + 0.03 * shopLvl('enigmaDmg'); }
   function combatAccMul() { return 1 + 0.03 * shopLvl('keen'); }
-  function coinMul()      { return 1 + 0.06 * shopLvl('magnet') + eqSum('coin'); }
+  function coinMul()      { return 1 + 0.06 * shopLvl('magnet') + eqSum('coin') + 0.06 * shopLvl('enigmaCoin'); }
   function offlineCap()   { return OFFLINE_CAP + shopLvl('charm') * 7200; }
 
   /* ── Combat math ─────────────────────────────────────────────── */
@@ -831,17 +831,22 @@
     Haptics.vibrate(40);
     renderStoreTab(); renderTopbar(); renderActiveHeader();
   };
-  // Special upgrade bought with ✦ Enigma Shards (earned in Code Breaker).
-  const ENIGMA_MAX = 10;
-  function enigmaCost() { return 2 + shopLvl('enigma') * 2; }
-  window.IdleRealm_buyEnigma = function() {
-    const lvl = shopLvl('enigma');
-    if (lvl >= ENIGMA_MAX) return;
-    const cost = enigmaCost();
-    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Code Breaker`); return; }
+  // Special upgrades bought with ✦ Enigma Shards (earned in Enigma Puzzles).
+  const ENIGMA = [
+    { id: 'enigma',     icon: '✦',  name: 'Enigma Focus',   max: 10, cost: l => 2 + l * 2, fmt: l => `+${l * 3}% XP from everything` },
+    { id: 'enigmaCoin', icon: '🤑', name: 'Enigma Fortune', max: 10, cost: l => 3 + l * 2, fmt: l => `+${l * 6}% coins from all sources` },
+    { id: 'enigmaDmg',  icon: '⚔️', name: 'Enigma Might',    max: 10, cost: l => 3 + l * 3, fmt: l => `+${l * 3}% combat damage` },
+  ];
+  function enigmaDef(id) { return ENIGMA.find(e => e.id === id); }
+  window.IdleRealm_buyEnigma = function(id) {
+    const def = enigmaDef(id); if (!def) return;
+    const lvl = shopLvl(def.id);
+    if (lvl >= def.max) return;
+    const cost = def.cost(lvl);
+    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Enigma Puzzles`); return; }
     if (!S.shop) S.shop = {};
-    S.shop.enigma = lvl + 1;
-    Toast.show('✦', 'Enigma Focus → Lv.' + (lvl + 1), `+${(lvl + 1) * 3}% XP from everything`);
+    S.shop[def.id] = lvl + 1;
+    Toast.show(def.icon, def.name + ' → Lv.' + (lvl + 1), def.fmt(lvl + 1));
     Haptics.vibrate([40, 30, 60]);
     renderStoreTab(); renderActiveHeader();
   };
@@ -1549,17 +1554,19 @@
     const list = document.getElementById('rl-content');
     if (!list || activeTab !== 'store') return;
     let html = '<div style="padding:10px;display:flex;flex-direction:column;gap:6px">';
-    // ✦ Enigma upgrade — bought with shared shards from Code Breaker
-    const eLvl = shopLvl('enigma'), eMax = eLvl >= ENIGMA_MAX, eCost = enigmaCost(), eAff = !eMax && Shards.get() >= eCost;
-    html += `<div style="font-size:12px;color:var(--text2)">✦ Enigma — earned in <b>Code Breaker</b> · you have <b class="text-accent">${Fmt.format(Shards.get())}</b> Shards</div>`;
-    html += `<button class="upgrade-item ${eMax ? '' : (eAff ? 'can-buy' : 'locked')}" ${eMax ? '' : 'onclick="IdleRealm_buyEnigma()"'} style="border-color:var(--accent)">
-        <div class="upg-icon">✦</div>
-        <div class="upg-info">
-          <div class="upg-name">Enigma Focus <span style="color:var(--text2);font-size:12px">Lv.${eLvl}/${ENIGMA_MAX}</span></div>
-          <div style="font-size:12px;color:var(--text2)">+${eLvl * 3}% XP from everything${eMax ? '' : ` <span style="color:var(--green)">→ +${(eLvl + 1) * 3}%</span>`}</div>
-        </div>
-        <div class="text-accent" style="font-size:13px;flex-shrink:0">${eMax ? 'MAX' : '✦ ' + eCost}</div>
-      </button>`;
+    // ✦ Enigma upgrades — bought with shared shards from Enigma Puzzles
+    html += `<div style="font-size:12px;color:var(--text2)">✦ Enigma — earned in <b>Enigma Puzzles</b> · you have <b class="text-accent">${Fmt.format(Shards.get())}</b> Shards</div>`;
+    ENIGMA.forEach(def => {
+      const lvl = shopLvl(def.id), maxed = lvl >= def.max, cost = def.cost(lvl), aff = !maxed && Shards.get() >= cost;
+      html += `<button class="upgrade-item ${maxed ? '' : (aff ? 'can-buy' : 'locked')}" ${maxed ? '' : `onclick="IdleRealm_buyEnigma('${def.id}')"`} style="border-color:var(--accent)">
+          <div class="upg-icon">${def.icon}</div>
+          <div class="upg-info">
+            <div class="upg-name">${def.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}/${def.max}</span></div>
+            <div style="font-size:12px;color:var(--text2)">${def.fmt(lvl)}${maxed ? '' : ` <span style="color:var(--green)">→ ${def.fmt(lvl + 1)}</span>`}</div>
+          </div>
+          <div class="text-accent" style="font-size:13px;flex-shrink:0">${maxed ? 'MAX' : '✦ ' + cost}</div>
+        </button>`;
+    });
     // 🎁 Loot Crates — infinite coin sink (gems, materials, rare gear)
     html += `<div style="font-size:12px;color:var(--text2);margin-top:6px">🎁 Loot Crates — gamble 🪙 coins for gems, crafting materials & (rarely) unique gear.</div>`;
     CRATES.forEach(c => {
