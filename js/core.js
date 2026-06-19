@@ -248,7 +248,7 @@ const Router = (() => {
 })();
 
 /* ════════════════════════════════════════════════════════════════
-   ENIGMA SHARDS — shared cross-game currency (earned in Code Breaker,
+   ENIGMA SHARDS — shared cross-game currency (earned in Enigma Puzzles,
    spent on special upgrades in the other games).
    ════════════════════════════════════════════════════════════════ */
 const Shards = (() => {
@@ -455,7 +455,7 @@ const SettingsScreen = (() => {
   const GAMES = [
     { id: 'clicker', icon: '🍪', name: 'Cookie Clicker' },
     { id: 'dungeon', icon: '⚔️', name: 'Idle Realm' },
-    { id: 'puzzle',  icon: '🧩', name: 'Code Breaker' },
+    { id: 'puzzle',  icon: '🧩', name: 'Enigma Puzzles' },
   ];
   function render() {
     const list = document.getElementById('settings-list');
