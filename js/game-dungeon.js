@@ -184,8 +184,11 @@
 
   /* ── Slayer rewards (spend Slayer points earned from tasks) ───── */
   const SLAYER_REWARDS = [
-    { id:'sl_dmg',  name:"Slayer's Edge", icon:'⚔️', max:10, base:3, mul:1.6, fmt:l=>`+${l*4}% combat damage` },
-    { id:'sl_speed',name:'Bloodlust',     icon:'⚡', max:5,  base:5, mul:1.8, fmt:l=>`+${l*3}% gathering speed` },
+    { id:'sl_dmg',  name:"Slayer's Edge", icon:'⚔️', max:15, base:3, mul:1.6, fmt:l=>`+${l*4}% combat damage` },
+    { id:'sl_speed',name:'Bloodlust',     icon:'⚡', max:10, base:5, mul:1.8, fmt:l=>`+${l*3}% gathering speed` },
+    { id:'sl_hp',   name:"Slayer's Vitality",icon:'❤️',max:20, base:4, mul:1.45, fmt:l=>`+${l*2}% max HP` },
+    { id:'sl_food', name:'Carnivore',     icon:'🍖', max:10, base:5, mul:1.5, fmt:l=>`+${l*5}% food healing` },
+    { id:'sl_loot', name:"Hunter's Eye",  icon:'🎯', max:10, base:6, mul:1.6, fmt:l=>`+${l*6}% monster drop chance` },
     { id:'sl_auto', name:'Slayer Contract',icon:'📜', max:1, base:8, mul:1, fmt:()=>'Auto-assign the next task on completion' },
   ];
   function slayerLvlOf(id) { return (S.slayer && S.slayer.rewards && S.slayer.rewards[id]) || 0; }
@@ -414,7 +417,7 @@
     const a = skillLevel('attack'), st = skillLevel('strength'), d = skillLevel('defence'), h = skillLevel('hitpoints');
     return Math.floor(0.25 * (d + h) + 0.325 * (a + st));
   }
-  function maxHp() { return Math.floor(skillLevel('hitpoints') * 10 * (1 + 0.04 * shopLvl('bulwark'))); }
+  function maxHp() { return Math.floor(skillLevel('hitpoints') * 10 * (1 + 0.04 * shopLvl('bulwark') + 0.02 * slayerLvlOf('sl_hp'))); }
   function addXp(id, amount) {
     if (!amount) return;
     amount = Math.round(amount * globalXpMul());   // Tome of Learning
@@ -519,9 +522,11 @@
     return Math.max(0, a.burn - skillLevel('cooking') * 0.01 - skillLevel('firemaking') * 0.003);
   }
   // Rare-drop multiplier: Foraging/Fortune gear + Lucky Charm boost gem chances.
-  function rareBonus() { return 1 + eqSum('rare') + 0.06 * shopLvl('lucky'); }
+  function rareBonus() { return 1 + eqSum('rare') + 0.06 * shopLvl('lucky') + 0.08 * shopLvl('enigmaLuck'); }
+  // Slayer "Hunter's Eye" boosts combat monster drop chances (incl. uniques).
+  function combatDropMul() { return 1 + 0.06 * slayerLvlOf('sl_loot'); }
   // Cooking synergy + Iron Stomach shop upgrade: food heals more.
-  function foodHeal(id) { return Math.floor((ITEMS[id].heal || 0) * (1 + 0.005 * skillLevel('cooking') + 0.05 * shopLvl('stomach'))); }
+  function foodHeal(id) { return Math.floor((ITEMS[id].heal || 0) * (1 + 0.005 * skillLevel('cooking') + 0.05 * shopLvl('stomach') + 0.05 * slayerLvlOf('sl_food'))); }
 
   /* ── Mastery: per-action progression (cap 50) ────────────────── */
   const MASTERY_CAP = 50;
@@ -671,8 +676,9 @@
     addXp('hitpoints', Math.round(mx * 0.33));
     const coins = Math.round((m.coins[0] + Math.floor(Math.random() * (m.coins[1] - m.coins[0] + 1))) * coinMul());
     bankAdd('coins', coins);
+    const dropMul = combatDropMul();
     (m.drops || []).forEach(d => {
-      if (Math.random() < d.chance) {
+      if (Math.random() < d.chance * dropMul) {
         const q = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
         bankAdd(d.item, q);
         const it = ITEMS[d.item];
@@ -865,9 +871,10 @@
   };
   // Special upgrades bought with ✦ Enigma Shards (earned in Enigma Puzzles).
   const ENIGMA = [
-    { id: 'enigma',     icon: '✦',  name: 'Enigma Focus',   max: 10, cost: l => 2 + l * 2, fmt: l => `+${l * 3}% XP from everything` },
-    { id: 'enigmaCoin', icon: '🤑', name: 'Enigma Fortune', max: 10, cost: l => 3 + l * 2, fmt: l => `+${l * 6}% coins from all sources` },
-    { id: 'enigmaDmg',  icon: '⚔️', name: 'Enigma Might',    max: 10, cost: l => 3 + l * 3, fmt: l => `+${l * 3}% combat damage` },
+    { id: 'enigma',     icon: '✦',  name: 'Enigma Focus',     max: 25, cost: l => 2 + l * 2, fmt: l => `+${l * 3}% XP from everything` },
+    { id: 'enigmaCoin', icon: '🤑', name: 'Enigma Fortune',   max: 25, cost: l => 3 + l * 2, fmt: l => `+${l * 6}% coins from all sources` },
+    { id: 'enigmaDmg',  icon: '⚔️', name: 'Enigma Might',      max: 25, cost: l => 3 + l * 3, fmt: l => `+${l * 3}% combat damage` },
+    { id: 'enigmaLuck', icon: '🍀', name: 'Enigma Prospector', max: 15, cost: l => 4 + l * 3, fmt: l => `+${l * 8}% rare-gem find while gathering` },
   ];
   function enigmaDef(id) { return ENIGMA.find(e => e.id === id); }
   window.IdleRealm_buyEnigma = function(id) {
@@ -1034,7 +1041,7 @@
             totalKills += seg; timeLeft -= segTime; foodLeft = Math.max(0, foodLeft - Math.max(0, need));
             styleXp += mx * seg; hpXp += mx * 0.33 * seg;
             coinsTot += (m.coins[0] + m.coins[1]) / 2 * seg * coinMul();
-            (m.drops || []).forEach(dr => { const got = Math.floor(seg * dr.chance + Math.random()); if (got > 0) drops[dr.item] = (drops[dr.item] || 0) + got * (((dr.min + dr.max) >> 1) || 1); });
+            (m.drops || []).forEach(dr => { const got = Math.floor(seg * dr.chance * combatDropMul() + Math.random()); if (got > 0) drops[dr.item] = (drops[dr.item] || 0) + got * (((dr.min + dr.max) >> 1) || 1); });
             if (onTask) {
               slayXp += mx * 0.8 * seg;
               d.slayer.left -= seg;

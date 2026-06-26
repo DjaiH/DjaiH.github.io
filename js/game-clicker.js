@@ -124,6 +124,7 @@
       totalClicks:    0,
       enigma:         0, // ✦ Enigma Catalyst level (shard-bought CpS multiplier)
       enigmaClick:    0, // ✦ Enigma Touch level (shard-bought click-power multiplier)
+      enigmaGold:     0, // ✦ Enigma Luck level (shard-bought Golden Cookie reward)
       cpc:            1, // cookies per click (base)
       buildings:      Object.fromEntries(BUILDINGS.map(b => [b.id, 0])),
       buildingUpgrades: {}, // id -> [false, false, false]
@@ -420,25 +421,36 @@
     let html = '';
 
     // ✦ Enigma Catalyst — special upgrade bought with shared Enigma Shards
-    const eLvl = S.enigma || 0, eMax = eLvl >= 10, eCost = 3 + eLvl * 3, eAff = !eMax && Shards.get() >= eCost;
+    const eLvl = S.enigma || 0, eMax = eLvl >= 25, eCost = 3 + eLvl * 3, eAff = !eMax && Shards.get() >= eCost;
     html += `<button class="upgrade-item ${eMax ? '' : (eAff ? '' : 'locked')}" ${eMax ? '' : 'onclick="ClickerGame_buyEnigma()"'} style="border-color:var(--accent)">
         <div class="upg-icon">✦</div>
         <div class="upg-info">
-          <div class="upg-name">Enigma Catalyst <span style="color:var(--text2);font-size:12px">Lv.${eLvl}/10</span></div>
+          <div class="upg-name">Enigma Catalyst <span style="color:var(--text2);font-size:12px">Lv.${eLvl}/25</span></div>
           <div class="upg-cost" style="color:var(--text2)">+${eLvl * 5}% CpS · you have ${Fmt.format(Shards.get())} ✦</div>
         </div>
         <div class="upg-effect text-accent">${eMax ? 'MAX' : '✦ ' + eCost}</div>
       </button>`;
 
     // ✦ Enigma Touch — shard-bought click-power multiplier
-    const tLvl = S.enigmaClick || 0, tMax = tLvl >= 10, tCost = 3 + tLvl * 3, tAff = !tMax && Shards.get() >= tCost;
+    const tLvl = S.enigmaClick || 0, tMax = tLvl >= 25, tCost = 3 + tLvl * 3, tAff = !tMax && Shards.get() >= tCost;
     html += `<button class="upgrade-item ${tMax ? '' : (tAff ? '' : 'locked')}" ${tMax ? '' : 'onclick="ClickerGame_buyEnigmaClick()"'} style="border-color:var(--accent)">
         <div class="upg-icon">✦</div>
         <div class="upg-info">
-          <div class="upg-name">Enigma Touch <span style="color:var(--text2);font-size:12px">Lv.${tLvl}/10</span></div>
+          <div class="upg-name">Enigma Touch <span style="color:var(--text2);font-size:12px">Lv.${tLvl}/25</span></div>
           <div class="upg-cost" style="color:var(--text2)">+${tLvl * 10}% click power · you have ${Fmt.format(Shards.get())} ✦</div>
         </div>
         <div class="upg-effect text-accent">${tMax ? 'MAX' : '✦ ' + tCost}</div>
+      </button>`;
+
+    // ✦ Enigma Luck — shard-bought Golden Cookie reward multiplier
+    const gLvl = S.enigmaGold || 0, gMax = gLvl >= 15, gCost = 4 + gLvl * 4, gAff = !gMax && Shards.get() >= gCost;
+    html += `<button class="upgrade-item ${gMax ? '' : (gAff ? '' : 'locked')}" ${gMax ? '' : 'onclick="ClickerGame_buyEnigmaGold()"'} style="border-color:var(--accent)">
+        <div class="upg-icon">✦</div>
+        <div class="upg-info">
+          <div class="upg-name">Enigma Luck <span style="color:var(--text2);font-size:12px">Lv.${gLvl}/15</span></div>
+          <div class="upg-cost" style="color:var(--text2)">+${gLvl * 15}% Golden Cookie reward · you have ${Fmt.format(Shards.get())} ✦</div>
+        </div>
+        <div class="upg-effect text-accent">${gMax ? 'MAX' : '✦ ' + gCost}</div>
       </button>`;
 
     // Click upgrades
@@ -774,7 +786,7 @@
   // ✦ Enigma Catalyst — spend shared Enigma Shards (earned in Enigma Puzzles)
   window.ClickerGame_buyEnigma = function() {
     const lvl = S.enigma || 0;
-    if (lvl >= 10) return;
+    if (lvl >= 25) return;
     const cost = 3 + lvl * 3;
     if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Enigma Puzzles`); return; }
     S.enigma = lvl + 1;
@@ -786,11 +798,23 @@
   // ✦ Enigma Touch — spend shards on click power
   window.ClickerGame_buyEnigmaClick = function() {
     const lvl = S.enigmaClick || 0;
-    if (lvl >= 10) return;
+    if (lvl >= 25) return;
     const cost = 3 + lvl * 3;
     if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Enigma Puzzles`); return; }
     S.enigmaClick = lvl + 1;
     Toast.show('✦', 'Enigma Touch → Lv.' + (lvl + 1), `+${(lvl + 1) * 10}% click power`);
+    Haptics.vibrate([40, 30, 60]);
+    renderAll();
+  };
+
+  // ✦ Enigma Luck — spend shards on bigger Golden Cookie rewards
+  window.ClickerGame_buyEnigmaGold = function() {
+    const lvl = S.enigmaGold || 0;
+    if (lvl >= 15) return;
+    const cost = 4 + lvl * 4;
+    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Enigma Puzzles`); return; }
+    S.enigmaGold = lvl + 1;
+    Toast.show('✦', 'Enigma Luck → Lv.' + (lvl + 1), `+${(lvl + 1) * 15}% Golden Cookie reward`);
     Haptics.vibrate([40, 30, 60]);
     renderAll();
   };
@@ -906,7 +930,7 @@
   window.ClickerGame_goldenClick = function(e) {
     if (!goldenActive) return;
     const cps = computeCps(S);
-    const bonus = Math.max(13, cps * 60 * 15) * techEffect(S, 'goldenMul'); // 15 minutes of CPS
+    const bonus = Math.max(13, cps * 60 * 15) * techEffect(S, 'goldenMul') * (1 + 0.15 * (S.enigmaGold || 0)); // 15 minutes of CPS
     S.cookies    += bonus;
     S.totalBaked += bonus;
     S.allTimeBaked = (S.allTimeBaked || 0) + bonus;
