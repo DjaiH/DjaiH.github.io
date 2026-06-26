@@ -190,6 +190,7 @@
     { id:'sl_food', name:'Carnivore',     icon:'🍖', max:10, base:5, mul:1.5, fmt:l=>`+${l*5}% food healing` },
     { id:'sl_loot', name:"Hunter's Eye",  icon:'🎯', max:10, base:6, mul:1.6, fmt:l=>`+${l*6}% monster drop chance` },
     { id:'sl_auto', name:'Slayer Contract',icon:'📜', max:1, base:8, mul:1, fmt:()=>'Auto-assign the next task on completion' },
+    { id:'sl_codex',name:'Slayer Codex',  icon:'📖', uncapped:true, base:12, mul:1.18, fmt:l=>`+${l}% combat damage (no cap)` },
   ];
   function slayerLvlOf(id) { return (S.slayer && S.slayer.rewards && S.slayer.rewards[id]) || 0; }
   function slayerRewardDef(id) { return SLAYER_REWARDS.find(r => r.id === id); }
@@ -565,7 +566,7 @@
   function shopDef(id) { return SHOP.find(s => s.id === id); }
   function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
   function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + eqSum('gxp') + 0.03 * shopLvl('enigma'); }
-  function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat() + 0.03 * shopLvl('enigmaDmg'); }
+  function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat() + 0.03 * shopLvl('enigmaDmg') + 0.01 * slayerLvlOf('sl_codex'); }
   function combatAccMul() { return 1 + 0.03 * shopLvl('keen'); }
   function coinMul()      { return 1 + 0.06 * shopLvl('magnet') + eqSum('coin') + 0.06 * shopLvl('enigmaCoin'); }
   function offlineCap()   { return OFFLINE_CAP + shopLvl('charm') * 7200; }
@@ -815,7 +816,7 @@
   window.IdleRealm_buySlayer = function(id) {
     const def = slayerRewardDef(id); if (!def) return;
     const lvl = slayerLvlOf(id);
-    if (lvl >= def.max) return;
+    if (!def.uncapped && lvl >= def.max) return;
     const cost = slayerRewardCost(def, lvl);
     if ((S.slayer.points || 0) < cost) { Toast.show('💀', 'Not enough points', `Need ${cost} Slayer points`); return; }
     S.slayer.points -= cost;
@@ -1352,13 +1353,16 @@
     html += '<div class="menu-section-title" style="padding:6px 2px 2px">Slayer Rewards</div>';
     SLAYER_REWARDS.forEach(def => {
       const lvl = slayerLvlOf(def.id);
-      const maxed = lvl >= def.max;
+      const maxed = def.uncapped ? false : lvl >= def.max;
       const cost = slayerRewardCost(def, lvl);
       const aff = !maxed && (sl.points || 0) >= cost;
+      const lvlTag = def.uncapped ? `<span style="color:var(--text2);font-size:12px">Lv.${lvl}</span>`
+        : def.max > 1 ? `<span style="color:var(--text2);font-size:12px">Lv.${lvl}/${def.max}</span>`
+        : (maxed ? '<span style="color:var(--green);font-size:12px">✓</span>' : '');
       html += `<button class="upgrade-item ${maxed ? '' : (aff ? 'can-buy' : 'locked')}" ${maxed ? '' : `onclick="IdleRealm_buySlayer('${def.id}')"`}>
           <div class="upg-icon">${def.icon}</div>
           <div class="upg-info">
-            <div class="upg-name">${def.name} ${def.max > 1 ? `<span style="color:var(--text2);font-size:12px">Lv.${lvl}/${def.max}</span>` : (maxed ? '<span style="color:var(--green);font-size:12px">✓</span>' : '')}</div>
+            <div class="upg-name">${def.name} ${lvlTag}</div>
             <div style="font-size:12px;color:var(--text2)">${def.fmt(Math.max(1, lvl))}</div>
           </div>
           <div class="text-accent" style="font-size:13px;flex-shrink:0">${maxed ? 'Owned' : '💀 ' + cost}</div>
