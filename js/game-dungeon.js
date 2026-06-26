@@ -333,11 +333,11 @@
   // The dragonstone needed for high-tier crafting drops rarely from the very top nodes.
   [['mn_dragon',0.004],['wc_elder',0.0025],['fs_angler',0.0025],['th_hoard',0.006]]
     .forEach(([id, chance]) => { if (ACTION[id]) ACTION[id].rare.push({ item:'gem_dragon', chance }); });
-  // Ultra-rare unique drops from specific gathering actions (chance < 0.01%)
-  [['mn_runite', 'ring_fortune', 0.00006], ['wc_magic', 'ring_scholar', 0.00007],
-   ['wc_magic', 'hat_wisdom', 0.00004], ['fs_shark', 'hat_anglers', 0.00009],
-   ['mn_runite', 'hat_wisdom', 0.00003],
-   ['th_vault', 'ring_thief', 0.00006], ['th_heist', 'ring_thief', 0.00009]]
+  // Ultra-rare unique drops from specific gathering actions — rare but attainable.
+  [['mn_runite', 'ring_fortune', 0.0003], ['wc_magic', 'ring_scholar', 0.00035],
+   ['wc_magic', 'hat_wisdom', 0.0002], ['fs_shark', 'hat_anglers', 0.00045],
+   ['mn_runite', 'hat_wisdom', 0.00015],
+   ['th_vault', 'ring_thief', 0.0003], ['th_heist', 'ring_thief', 0.00045]]
     .forEach(([id, item, chance]) => { if (ACTION[id]) (ACTION[id].rare = ACTION[id].rare || []).push({ item, chance }); });
 
   /* ── Monsters (combat). reqCb gates by combat level. 6 zones. ─── */
@@ -370,12 +370,12 @@
   ];
   const MONSTER = Object.fromEntries(MONSTERS.map(m => [m.id, m]));
   const ZONES = [...new Set(MONSTERS.map(m => m.zone))];
-  // Ultra-rare unique drops from specific monsters (chance < 0.01%)
-  [['green_dragon', 'weapon_dragonblade', 0.00006], ['red_dragon', 'weapon_dragonblade', 0.00009],
-   ['wyrm', 'weapon_abyssal', 0.00005], ['kraken', 'weapon_abyssal', 0.00008],
-   ['troll', 'ring_power', 0.00005], ['ogre', 'ring_power', 0.00007], ['demon', 'ring_power', 0.00009],
-   ['demon', 'hat_slayer', 0.00007], ['hellhound', 'hat_slayer', 0.00009],
-   ['kraken', 'ring_fortune', 0.00006]]
+  // Ultra-rare unique drops from specific monsters — a long but attainable chase.
+  [['green_dragon', 'weapon_dragonblade', 0.0004], ['red_dragon', 'weapon_dragonblade', 0.0006],
+   ['wyrm', 'weapon_abyssal', 0.0003], ['kraken', 'weapon_abyssal', 0.0005],
+   ['troll', 'ring_power', 0.0004], ['ogre', 'ring_power', 0.0005], ['demon', 'ring_power', 0.0006],
+   ['demon', 'hat_slayer', 0.0005], ['hellhound', 'hat_slayer', 0.0006],
+   ['kraken', 'ring_fortune', 0.0004]]
     .forEach(([mid, item, chance]) => { const m = MONSTER[mid]; if (m) (m.drops = m.drops || []).push({ item, min: 1, max: 1, chance }); });
 
   /* ── State ───────────────────────────────────────────────────── */

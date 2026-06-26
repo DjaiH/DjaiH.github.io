@@ -98,11 +98,14 @@
   ];
 
   /* ── Synergies: two buildings boost each other ─────────────── */
+  // Each owned synergy makes its two building types boost each other by
+  // SYNERGY_RATE per partner owned (e.g. 200 partners → +40% to that line).
+  const SYNERGY_RATE = 0.002;
   const SYNERGIES = [
-    { id:'sy1', a:'grandma', b:'farm',    name:'Cookie Cultivation', icon:'👵', cost:1e9,  desc:'Grandmas & Farms each boost the other (+0.05% per partner owned)' },
-    { id:'sy2', a:'mine',    b:'factory', name:'Industrial Supply',  icon:'⛏️', cost:5e10, desc:'Mines & Factories each boost the other' },
-    { id:'sy3', a:'bank',    b:'temple',  name:'Holy Economy',       icon:'🏦', cost:1e12, desc:'Banks & Temples each boost the other' },
-    { id:'sy4', a:'cursor',  b:'wizard',  name:'Arcane Automation',  icon:'🧙', cost:5e12, desc:'Cursors & Wizard Towers each boost the other' },
+    { id:'sy1', a:'grandma', b:'farm',    name:'Cookie Cultivation', icon:'👵', cost:1e9,  desc:'Grandmas & Farms each boost the other (+0.2% per partner owned)' },
+    { id:'sy2', a:'mine',    b:'factory', name:'Industrial Supply',  icon:'⛏️', cost:5e10, desc:'Mines & Factories each boost the other (+0.2% per partner owned)' },
+    { id:'sy3', a:'bank',    b:'temple',  name:'Holy Economy',       icon:'🏦', cost:1e12, desc:'Banks & Temples each boost the other (+0.2% per partner owned)' },
+    { id:'sy4', a:'cursor',  b:'wizard',  name:'Arcane Automation',  icon:'🧙', cost:5e12, desc:'Cursors & Wizard Towers each boost the other (+0.2% per partner owned)' },
   ];
 
   /* ── State ─────────────────────────────────────────────────── */
@@ -196,8 +199,8 @@
     let mul = 1;
     SYNERGIES.forEach(sy => {
       if (!state.synergies || !state.synergies[sy.id]) return;
-      if (sy.a === buildingId) mul *= 1 + 0.0005 * (state.buildings[sy.b] || 0);
-      if (sy.b === buildingId) mul *= 1 + 0.0005 * (state.buildings[sy.a] || 0);
+      if (sy.a === buildingId) mul *= 1 + SYNERGY_RATE * (state.buildings[sy.b] || 0);
+      if (sy.b === buildingId) mul *= 1 + SYNERGY_RATE * (state.buildings[sy.a] || 0);
     });
     return mul;
   }
@@ -621,7 +624,7 @@
       const owned = S.synergies[sy.id];
       const aB = BUILDINGS.find(b => b.id === sy.a), bB = BUILDINGS.find(b => b.id === sy.b);
       const canAfford = S.cookies >= sy.cost && !owned;
-      const live = owned ? `+${(0.0005 * (S.buildings[sy.b] || 0) * 100).toFixed(1)}% / +${(0.0005 * (S.buildings[sy.a] || 0) * 100).toFixed(1)}%` : '';
+      const live = owned ? `+${(SYNERGY_RATE * (S.buildings[sy.b] || 0) * 100).toFixed(1)}% / +${(SYNERGY_RATE * (S.buildings[sy.a] || 0) * 100).toFixed(1)}%` : '';
       html += `<button class="upgrade-item ${owned ? '' : (canAfford ? '' : 'locked')}" ${owned ? '' : `onclick="ClickerGame_buySynergy('${sy.id}')"`} style="${owned ? 'border-color:var(--epic)' : ''}">
         <div class="upg-icon">${aB.icon}${bB.icon}</div>
         <div class="upg-info">
