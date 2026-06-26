@@ -561,11 +561,12 @@
     { id:'haste',   name:'Swift Cooking',    icon:'⚗️', max:5,  base:3000,  mul:2.1, fmt:l=>`-${l*5}% production time` },
     { id:'bagspace',name:'Bag Space',        icon:'🎒', max:10, base:800,   mul:1.7, fmt:l=>`+${l*5} bag slots (${BAG_BASE + l*5} total)` },
     { id:'charm',   name:'Offline Charm',    icon:'⏳', max:12, base:1200,  mul:1.6, fmt:l=>`+${l*2}h offline cap (${24 + l*2}h total)` },
+    { id:'treasury',name:'Royal Treasury',   icon:'👑', uncapped:true, base:5000, mul:1.5, fmt:l=>`+${l}% XP from everything (no cap)` },
   ];
   function shopLvl(id) { return (S.shop && S.shop[id]) || 0; }
   function shopDef(id) { return SHOP.find(s => s.id === id); }
   function shopCost(def, lvl) { return Math.floor(def.base * Math.pow(def.mul, lvl)); }
-  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + eqSum('gxp') + 0.03 * shopLvl('enigma'); }
+  function globalXpMul()  { return 1 + 0.02 * shopLvl('tome') + eqSum('gxp') + 0.03 * shopLvl('enigma') + 0.01 * shopLvl('treasury'); }
   function combatDmgMul() { return 1 + 0.03 * shopLvl('whet') + 0.04 * slayerLvlOf('sl_dmg') + capeCombat() + 0.03 * shopLvl('enigmaDmg') + 0.01 * slayerLvlOf('sl_codex'); }
   function combatAccMul() { return 1 + 0.03 * shopLvl('keen'); }
   function coinMul()      { return 1 + 0.06 * shopLvl('magnet') + eqSum('coin') + 0.06 * shopLvl('enigmaCoin'); }
@@ -859,7 +860,7 @@
   window.IdleRealm_buyShop = function(id) {
     const def = shopDef(id); if (!def) return;
     const lvl = shopLvl(id);
-    if (lvl >= def.max) return;
+    if (!def.uncapped && lvl >= def.max) return;
     const cost = shopCost(def, lvl);
     if (bankCount('coins') < cost) { Toast.show('🪙', 'Not enough coins', `Need ${Fmt.format(cost)} coins`); return; }
     bankRemove('coins', cost);
@@ -1624,13 +1625,14 @@
     html += `<div style="font-size:12px;color:var(--text2);margin-top:6px">General Store — spend 🪙 coins on permanent upgrades.</div>`;
     SHOP.forEach(def => {
       const lvl = shopLvl(def.id);
-      const maxed = lvl >= def.max;
+      const maxed = def.uncapped ? false : lvl >= def.max;
       const cost = shopCost(def, lvl);
       const aff = !maxed && bankCount('coins') >= cost;
+      const lvlTag = def.uncapped ? `Lv.${lvl} · ∞` : `Lv.${lvl}/${def.max}`;
       html += `<button class="upgrade-item ${maxed ? '' : (aff ? 'can-buy' : 'locked')}" ${maxed ? '' : `onclick="IdleRealm_buyShop('${def.id}')"`}>
           <div class="upg-icon">${def.icon}</div>
           <div class="upg-info">
-            <div class="upg-name">${def.name} <span style="color:var(--text2);font-size:12px">Lv.${lvl}/${def.max}</span></div>
+            <div class="upg-name">${def.name} <span style="color:var(--text2);font-size:12px">${lvlTag}</span></div>
             <div style="font-size:12px;color:var(--text2)">${def.fmt(Math.max(1, lvl))}${!maxed ? ` <span style="color:var(--green)">→ ${def.fmt(lvl + 1)}</span>` : ''}</div>
           </div>
           <div class="text-gold" style="font-size:13px;flex-shrink:0">${maxed ? 'MAX' : '🪙 ' + Fmt.format(cost)}</div>
