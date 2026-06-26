@@ -125,6 +125,7 @@
       enigma:         0, // ✦ Enigma Catalyst level (shard-bought CpS multiplier)
       enigmaClick:    0, // ✦ Enigma Touch level (shard-bought click-power multiplier)
       enigmaGold:     0, // ✦ Enigma Luck level (shard-bought Golden Cookie reward)
+      enigmaOverflow: 0, // ✦ Enigma Overflow level (shard-bought, uncapped CpS — endless sink)
       cpc:            1, // cookies per click (base)
       buildings:      Object.fromEntries(BUILDINGS.map(b => [b.id, 0])),
       buildingUpgrades: {}, // id -> [false, false, false]
@@ -231,6 +232,8 @@
     total *= 1 + state.heavenlyChips * 0.02;
     // ✦ Enigma Catalyst: +5% CpS per level (bought with shared Enigma Shards)
     total *= 1 + 0.05 * (state.enigma || 0);
+    // ✦ Enigma Overflow: +3% CpS per level, uncapped (endless shard sink)
+    total *= 1 + 0.03 * (state.enigmaOverflow || 0);
     return total;
   }
 
@@ -451,6 +454,17 @@
           <div class="upg-cost" style="color:var(--text2)">+${gLvl * 15}% Golden Cookie reward · you have ${Fmt.format(Shards.get())} ✦</div>
         </div>
         <div class="upg-effect text-accent">${gMax ? 'MAX' : '✦ ' + gCost}</div>
+      </button>`;
+
+    // ✦ Enigma Overflow — uncapped CpS sink (endless): never maxes out
+    const oLvl = S.enigmaOverflow || 0, oCost = Math.ceil(8 * Math.pow(1.12, oLvl)), oAff = Shards.get() >= oCost;
+    html += `<button class="upgrade-item ${oAff ? '' : 'locked'}" onclick="ClickerGame_buyEnigmaOverflow()" style="border-color:var(--accent)">
+        <div class="upg-icon">✦</div>
+        <div class="upg-info">
+          <div class="upg-name">Enigma Overflow <span style="color:var(--text2);font-size:12px">Lv.${oLvl} · ∞</span></div>
+          <div class="upg-cost" style="color:var(--text2)">+${oLvl * 3}% CpS · no cap · you have ${Fmt.format(Shards.get())} ✦</div>
+        </div>
+        <div class="upg-effect text-accent">✦ ${oCost}</div>
       </button>`;
 
     // Click upgrades
@@ -819,6 +833,17 @@
     renderAll();
   };
 
+  // ✦ Enigma Overflow — uncapped CpS sink; cost climbs each level so shards always have a use
+  window.ClickerGame_buyEnigmaOverflow = function() {
+    const lvl = S.enigmaOverflow || 0;
+    const cost = Math.ceil(8 * Math.pow(1.12, lvl));
+    if (!Shards.spend(cost)) { Toast.show('✦', 'Not enough Shards', `Need ${cost} — earn them in Enigma Puzzles`); return; }
+    S.enigmaOverflow = lvl + 1;
+    Toast.show('✦', 'Enigma Overflow → Lv.' + (lvl + 1), `+${(lvl + 1) * 3}% cookies per second`);
+    Haptics.vibrate([40, 30, 60]);
+    renderAll();
+  };
+
   window.ClickerGame_buyBuildingUpgrade = function(buildingId, tier) {
     const u = BUILDING_UPGRADES[buildingId][tier];
     if (!u) return;
@@ -910,6 +935,8 @@
           // Meta layers persist across ascension
           const keepSugar   = S.sugar, keepSugarT = S.sugarTime;
           const keepLevels  = S.buildingLevels, keepTech = S.tech, keepSyn = S.synergies;
+          // Shard-bought Enigma upgrades use the shared cross-game currency — keep them.
+          const keepEnigma  = S.enigma, keepEnigmaClick = S.enigmaClick, keepEnigmaGold = S.enigmaGold, keepEnigmaOverflow = S.enigmaOverflow;
           S = defaultState();
           S.prestige      = newPrestige;
           S.heavenlyChips = newChips;
@@ -919,6 +946,10 @@
           S.buildingLevels= keepLevels;
           S.tech          = keepTech;
           S.synergies     = keepSyn;
+          S.enigma        = keepEnigma;
+          S.enigmaClick   = keepEnigmaClick;
+          S.enigmaGold    = keepEnigmaGold;
+          S.enigmaOverflow= keepEnigmaOverflow;
           AchievementSystem.unlock('prestige1');
           if (newPrestige >= 5) AchievementSystem.unlock('prestige5');
           Toast.show('✨', 'Ascended!', 'You now have ' + newChips + ' Heavenly Chips.');
